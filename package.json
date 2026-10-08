@@ -1,0 +1,76 @@
+{
+  "name": "dsh-web-search-opencode-ds",
+  "version": "0.2.0",
+  "description": "OpenCode as a web-search provider for DeepSeek Harness: runs DeepSeek's server-side web_search through OpenCode's Anthropic-compatible Messages endpoint, with its own settings page.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "icon": "./icon.svg",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE",
+    "scripts/*",
+    "test/*",
+    "pnpm-lock.yaml"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "cordis",
+    "plugin",
+    "bundle",
+    "web-search",
+    "opencode",
+    "opencode-go",
+    "deepseek",
+    "anthropic-messages",
+    "web_search_20250305"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lldwb/dsh-web-search-opencode-ds.git"
+  },
+  "homepage": "https://github.com/lldwb/dsh-web-search-opencode-ds#readme",
+  "bugs": {
+    "url": "https://github.com/lldwb/dsh-web-search-opencode-ds/issues"
+  },
+  "meta": {
+    "title": "Web Search via OpenCode (DeepSeek)",
+    "description": "Registers the opencode-ds web-search provider, calling DeepSeek's server-side web_search through OpenCode, with a Plugins-page settings form."
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  }
+}

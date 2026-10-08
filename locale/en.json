@@ -1,0 +1,8 @@
+{
+  "title": "Web Search via OpenCode (DeepSeek)",
+  "description": "Registers the opencode-ds web-search provider, running DeepSeek's server-side web_search through OpenCode, with a settings page of its own.",
+  "settings": {
+    "title": "Web search (OpenCode)",
+    "description": "Run DeepSeek web search through OpenCode instead of the official endpoint."
+  }
+}

@@ -1,0 +1,54 @@
+# dsh-web-search-opencode-ds — bundle patch layer.
+#
+# Two things happen here:
+#
+#   1. `insert` mounts the Host plugin that registers the `opencode-ds`
+#      WebSearchProvider with `ctx.web`, declares the plugin's Config schema, and
+#      ships the Plugins-page settings form (`client.js`).
+#   2. the id-targeted patch on the shipped `web` row pins the seam's search
+#      provider to that id, so `web_search` reaches this plugin at all.
+#
+# The row id below is load-bearing twice over: it is the Loader entry id, and it
+# is the settings namespace the browser form edits (the settings service projects
+# `entry.options.id`). Renaming the row without renaming SETTINGS_NAMESPACE in
+# index.js and SETTINGS_NS in client.js silently detaches the settings page.
+#
+# LOADER PATCH DIALECT — an id-targeted patch REPLACES the whole `config` of the
+# target row and never deep-merges. The shipped `web` row carries no config today,
+# so restating only `searchProvider` loses nothing. If you (or a higher-priority
+# layer such as the profile's own cordis.patch.yml) ever add `fetchProvider` to
+# the `web` row, that layer must restate BOTH fields or one of them disappears.
+#
+# Layer order reminder: every bundle patch runs first, then the profile's own
+# cordis.patch.yml, then --patch overlays. A profile-level `web` row would
+# therefore override the pin below — remove it there to keep this bundle the
+# single source of truth.
+#
+# Fields deliberately NOT set here are schema defaults (see `Config` in index.js):
+# model, apiVersion, maxTokens, maxUses, timeoutMs, retries, sessionMode,
+# queryTemplate, includeAnswer, and both switches. Leaving them unset is what
+# makes the settings form show them as "not overridden", so "Reset to default"
+# and the override badge mean what they say.
+
+- insert:
+    - id: web-search-opencode-ds
+      name: 'dsh-web-search-opencode-ds'
+      config:
+        # Credential reference, re-resolved before every search through
+        # `ctx.credentials` (which layers the DSH credential store over the
+        # process environment), then falling back to the process environment.
+        # `OPENCODE_GO_API_KEY` still resolves as a secondary reference, so an
+        # existing key stored under the old name keeps working.
+        apiKeyEnv: OPENCODE_API_KEY
+
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    # This pin is what makes the plugin authoritative. The two switches on the
+    # settings page then decide HOW it answers:
+    #   overrideOfficial: true  -> this plugin calls OpenCode itself
+    #   overrideOfficial: false -> this plugin delegates to `deepseek-official`,
+    #                              leaving the official configuration in charge
+    #   goMode: true            -> OpenCode Go plan endpoint  (/zen/go/v1)
+    #   goMode: false           -> metered OpenCode endpoint  (/zen/v1)
+    searchProvider: opencode-ds
