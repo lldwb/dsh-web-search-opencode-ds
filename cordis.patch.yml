@@ -1,54 +1,50 @@
-# dsh-web-search-opencode-ds — bundle patch layer.
+# dsh-web-search-opencode-ds — bundle 补丁层。
 #
-# Two things happen here:
+# 这里做两件事：
 #
-#   1. `insert` mounts the Host plugin that registers the `opencode-ds`
-#      WebSearchProvider with `ctx.web`, declares the plugin's Config schema, and
-#      ships the Plugins-page settings form (`client.js`).
-#   2. the id-targeted patch on the shipped `web` row pins the seam's search
-#      provider to that id, so `web_search` reaches this plugin at all.
+#   1. `insert` 挂载 Host 插件：向 `ctx.web` 注册 `opencode-ds`
+#      WebSearchProvider，声明插件的 Config schema，并附带插件页的设置表单
+#      （`client.js`）。
+#   2. 针对已内置的 `web` 行做按 id 定位的补丁，把该 seam 的搜索提供方固定为
+#      上面那个 id，这样 `web_search` 才会走到本插件。
 #
-# The row id below is load-bearing twice over: it is the Loader entry id, and it
-# is the settings namespace the browser form edits (the settings service projects
-# `entry.options.id`). Renaming the row without renaming SETTINGS_NAMESPACE in
-# index.js and SETTINGS_NS in client.js silently detaches the settings page.
+# 下面这个行 id 承担两重关键作用：它既是 Loader 条目 id，也是浏览器表单所编辑
+# 的设置命名空间（settings 服务会投影 `entry.options.id`）。只改行 id 而不改
+# index.js 里的 SETTINGS_NAMESPACE 和 client.js 里的 SETTINGS_NS，会让设置页
+# 悄无声息地失效。
 #
-# LOADER PATCH DIALECT — an id-targeted patch REPLACES the whole `config` of the
-# target row and never deep-merges. The shipped `web` row carries no config today,
-# so restating only `searchProvider` loses nothing. If you (or a higher-priority
-# layer such as the profile's own cordis.patch.yml) ever add `fetchProvider` to
-# the `web` row, that layer must restate BOTH fields or one of them disappears.
+# LOADER 补丁方言 —— 按 id 定位的补丁会**整体替换**目标行的 `config`，从不做深
+# 合并。内置的 `web` 行目前不带 config，所以只重述 `searchProvider` 不会丢东西。
+# 如果你（或更高优先级的层，比如 profile 自己的 cordis.patch.yml）给 `web` 行
+# 加了 `fetchProvider`，那一层必须把两个字段都重述一遍，否则会丢掉其中一个。
 #
-# Layer order reminder: every bundle patch runs first, then the profile's own
-# cordis.patch.yml, then --patch overlays. A profile-level `web` row would
-# therefore override the pin below — remove it there to keep this bundle the
-# single source of truth.
+# 层顺序提醒：所有 bundle 补丁先执行，然后是 profile 自己的 cordis.patch.yml，
+# 最后是 --patch 覆盖层。因此 profile 级别的 `web` 行会覆盖下面的固定绑定 ——
+# 想让本 bundle 保持唯一事实来源，就把那里的覆盖删掉。
 #
-# Fields deliberately NOT set here are schema defaults (see `Config` in index.js):
-# model, apiVersion, maxTokens, maxUses, timeoutMs, retries, sessionMode,
-# queryTemplate, includeAnswer, and both switches. Leaving them unset is what
-# makes the settings form show them as "not overridden", so "Reset to default"
-# and the override badge mean what they say.
+# 此处刻意不设置的字段都是 schema 默认值（见 index.js 的 `Config`）：
+# model、apiVersion、maxTokens、maxUses、timeoutMs、retries、sessionMode、
+# queryTemplate、includeAnswer，以及两个开关。正因为不设置它们，设置表单才会
+# 把它们显示为「未覆盖」，从而让「恢复默认」和覆盖标记名副其实。
 
 - insert:
     - id: web-search-opencode-ds
       name: 'dsh-web-search-opencode-ds'
       config:
-        # Credential reference, re-resolved before every search through
-        # `ctx.credentials` (which layers the DSH credential store over the
-        # process environment), then falling back to the process environment.
-        # `OPENCODE_GO_API_KEY` still resolves as a secondary reference, so an
-        # existing key stored under the old name keeps working.
+        # 凭据引用，每次搜索前都通过 `ctx.credentials` 重新解析（该服务把 DSH
+        # 凭据库叠加在进程环境之上），解析不到时再回退到进程环境。
+        # `OPENCODE_GO_API_KEY` 仍可作为次级引用解析，因此存放在旧名称下的
+        # 现有密钥依旧可用。
         apiKeyEnv: OPENCODE_API_KEY
 
 - id: web
   name: '@deepseek-ai/dsh-web'
   config:
-    # This pin is what makes the plugin authoritative. The two switches on the
-    # settings page then decide HOW it answers:
-    #   overrideOfficial: true  -> this plugin calls OpenCode itself
-    #   overrideOfficial: false -> this plugin delegates to `deepseek-official`,
-    #                              leaving the official configuration in charge
-    #   goMode: true            -> OpenCode Go plan endpoint  (/zen/go/v1)
-    #   goMode: false           -> metered OpenCode endpoint  (/zen/v1)
+    # 正是这个固定绑定让本插件成为权威。设置页上的两个开关随后决定它**如何**
+    # 作答：
+    #   overrideOfficial: true  -> 本插件自己调用 OpenCode
+    #   overrideOfficial: false -> 本插件委托给 `deepseek-official`，
+    #                              由官方那套配置说了算
+    #   goMode: true            -> OpenCode Go 套餐端点  (/zen/go/v1)
+    #   goMode: false           -> 按量计费的 OpenCode 端点  (/zen/v1)
     searchProvider: opencode-ds

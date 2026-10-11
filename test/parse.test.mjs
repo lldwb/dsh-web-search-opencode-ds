@@ -1,10 +1,11 @@
-// Parser and option tests for dsh-web-search-opencode-ds.
+// dsh-web-search-opencode-ds 的解析器与选项测试。
 //
-// Run with:  node --test test/
+// 运行方式：node --test test/
 //
-// The response fixture mirrors a real 2026-10-02 payload from
-// POST https://opencode.ai/zen/go/v1/messages: `web_search_result` items carry
-// title/url/page_age and an opaque `encrypted_content`, with no inline excerpt.
+// 响应 fixture 对照的是 2026-10-02 从
+// POST https://opencode.ai/zen/go/v1/messages 拿到的真实响应：
+// `web_search_result` 项带有 title/url/page_age 和一个不透明的
+// `encrypted_content`，没有内联摘要。
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -36,7 +37,7 @@ import {
   resolveOptions,
 } from '../index.js';
 
-/** A minimal successful payload shaped like the live one. */
+/** 一个与线上响应形态一致的最小成功响应体。 */
 function liveLikeResponse() {
   return {
     id: 'c1571262-7b34-4861-ba2f-f9abd1c78e6f',
@@ -71,7 +72,7 @@ function liveLikeResponse() {
             encrypted_content: 'opaque-blob-2',
             page_age: '2026-04-24',
           },
-          // Duplicate URL: must be deduped.
+          // 重复的 URL：必须被去重。
           {
             type: 'web_search_result',
             title: 'DeepSeek V4 released (dup)',
@@ -87,7 +88,7 @@ function liveLikeResponse() {
   };
 }
 
-test('buildSearchBody sends the native web_search server tool', () => {
+test('buildSearchBody 会发送原生 web_search 服务端工具', () => {
   const body = buildSearchBody(
     { model: 'deepseek-v4-flash', maxTokens: 4096, maxUses: 5, queryTemplate: 'Perform a web search for the query: {query}' },
     'who won',
@@ -97,13 +98,13 @@ test('buildSearchBody sends the native web_search server tool', () => {
   assert.deepEqual(body.tools, [
     { type: 'web_search_20250305', name: 'web_search', max_uses: 5 },
   ]);
-  // Content is a block array, never a bare string.
+  // content 是块数组，绝不是裸字符串。
   assert.deepEqual(body.messages[0].content, [
     { type: 'text', text: 'Perform a web search for the query: who won' },
   ]);
 });
 
-test('buildSearchBody appends the query when the template has no placeholder', () => {
+test('模板中没有占位符时 buildSearchBody 会追加查询词', () => {
   const body = buildSearchBody(
     { model: 'm', maxTokens: 1, maxUses: 1, queryTemplate: 'Search: ' },
     'x',
@@ -111,29 +112,29 @@ test('buildSearchBody appends the query when the template has no placeholder', (
   assert.equal(body.messages[0].content[0].text, 'Search: x');
 });
 
-test('mapAnthropicResponse extracts title/url/publishedAt and dedupes by url', () => {
+test('mapAnthropicResponse 提取 title/url/publishedAt 并按 url 去重', () => {
   const result = mapAnthropicResponse(liveLikeResponse());
   assert.equal(result.truncated, false);
-  assert.equal(result.content, undefined, 'prose is not surfaced by default');
-  assert.equal(result.sources.length, 2, 'the duplicate url is dropped');
+  assert.equal(result.content, undefined, '默认不暴露散文式内容');
+  assert.equal(result.sources.length, 2, '重复的 url 被丢弃');
   assert.deepEqual(result.sources[0], { url: 'https://example.com/a', title: 'DeepSeek V4 released' });
   assert.deepEqual(result.sources[1], {
     url: 'https://example.com/b',
     title: 'DeepSeek returns with V4-Pro and V4-Flash',
     publishedAt: '2026-04-24',
   });
-  // The opaque blob must never leak into the source list.
+  // 不透明的数据块绝不能泄漏到来源列表里。
   assert.equal(JSON.stringify(result.sources).includes('opaque-blob'), false);
 });
 
-test('mapAnthropicResponse omits snippet when the deployment emits no citations', () => {
+test('部署不输出引用时 mapAnthropicResponse 省略 snippet', () => {
   const result = mapAnthropicResponse(liveLikeResponse());
   for (const source of result.sources) {
-    assert.equal('snippet' in source, false, 'no snippet is invented');
+    assert.equal('snippet' in source, false, '不会凭空编造 snippet');
   }
 });
 
-test('mapAnthropicResponse joins cited_text as the snippet when present', () => {
+test('存在 cited_text 时 mapAnthropicResponse 会把它接为 snippet', () => {
   const payload = liveLikeResponse();
   payload.content.push({
     type: 'text',
@@ -148,22 +149,22 @@ test('mapAnthropicResponse joins cited_text as the snippet when present', () => 
   assert.equal(result.sources[1].snippet, 'excerpt B');
 });
 
-test('citationSnippets keeps the first occurrence per url', () => {
+test('citationSnippets 对每个 url 保留首次出现的值', () => {
   const map = citationSnippets([
     { type: 'text', citations: [{ url: 'u', cited_text: 'first' }] },
     { type: 'text', citations: [{ url: 'u', cited_text: 'second' }] },
     { type: 'text', citations: [{ url: 'v' }] },
   ]);
   assert.equal(map.get('u'), 'first');
-  assert.equal(map.has('v'), false, 'a citation without cited_text contributes nothing');
+  assert.equal(map.has('v'), false, '没有 cited_text 的引用不贡献任何内容');
 });
 
-test('mapAnthropicResponse surfaces the answer only when asked', () => {
+test('mapAnthropicResponse 仅在要求时才暴露回答', () => {
   const result = mapAnthropicResponse(liveLikeResponse(), { includeAnswer: true });
   assert.equal(result.content, 'DeepSeek V4 Flash shipped on April 24, 2026.');
 });
 
-test('mapAnthropicResponse throws WEB_PROVIDER_ERROR without a result block', () => {
+test('没有结果块时 mapAnthropicResponse 抛 WEB_PROVIDER_ERROR', () => {
   assert.throws(
     () => mapAnthropicResponse({ content: [{ type: 'text', text: 'I did not search.' }] }),
     (error) => {
@@ -175,12 +176,12 @@ test('mapAnthropicResponse throws WEB_PROVIDER_ERROR without a result block', ()
   );
 });
 
-test('mapAnthropicResponse tolerates a malformed body', () => {
+test('mapAnthropicResponse 能容忍畸形响应体', () => {
   assert.throws(() => mapAnthropicResponse(undefined), WebSearchError);
   assert.throws(() => mapAnthropicResponse({ content: 'nope' }), WebSearchError);
 });
 
-test('resolveOptions applies every documented default', () => {
+test('resolveOptions 会应用每一个已文档化的默认值', () => {
   const options = resolveOptions({ get: () => undefined }, undefined);
   assert.equal(options.apiKeyEnv, DEFAULT_API_KEY_ENV);
   assert.equal(options.baseURL, DEFAULT_BASE_URL);
@@ -192,7 +193,7 @@ test('resolveOptions applies every documented default', () => {
   assert.equal(options.sessionMode, 'per-request');
 });
 
-test('resolveOptions reads a plain config object', () => {
+test('resolveOptions 能读取普通配置对象', () => {
   const options = resolveOptions({ get: () => undefined }, {
     baseURL: 'https://example.test/v1',
     model: 'other-model',
@@ -205,7 +206,7 @@ test('resolveOptions reads a plain config object', () => {
   assert.equal(options.retries, 0);
 });
 
-test('resolveOptions unwraps schemastery-style volatile references', () => {
+test('resolveOptions 会解开 schemastery 风格的 volatile 引用', () => {
   const options = resolveOptions({ get: () => undefined }, {
     baseURL: { get: () => 'https://from-ref.test/v1' },
     model: { get: () => 'ref-model' },
@@ -214,13 +215,13 @@ test('resolveOptions unwraps schemastery-style volatile references', () => {
   assert.equal(options.model, 'ref-model');
 });
 
-test('provider id is the documented one', () => {
+test('提供方 id 与文档一致', () => {
   const provider = new OpenCodeSearchProvider({ get: () => undefined }, () => resolveOptions({ get: () => undefined }, undefined));
   assert.equal(provider.id, PROVIDER_ID);
   assert.equal(PROVIDER_ID, 'opencode-ds');
 });
 
-test('available() is false without any credential, true with the env var', () => {
+test('没有任何凭据时 available() 为 false，有环境变量时为 true', () => {
   const ctx = { get: () => undefined };
   const provider = new OpenCodeSearchProvider(ctx, () => resolveOptions(ctx, undefined));
 
@@ -228,7 +229,7 @@ test('available() is false without any credential, true with the env var', () =>
   delete process.env[DEFAULT_API_KEY_ENV];
   delete process.env.OPENCODE_API_KEY;
   try {
-    assert.equal(provider.available(), false, 'no key, no credentials service');
+    assert.equal(provider.available(), false, '没有密钥，也没有凭据服务');
     process.env[DEFAULT_API_KEY_ENV] = 'sk-test';
     assert.equal(provider.available(), true);
   } finally {
@@ -237,20 +238,20 @@ test('available() is false without any credential, true with the env var', () =>
   }
 });
 
-test('available() is optimistic when a credentials service is mounted', () => {
+test('挂载了凭据服务时 available() 取乐观态度', () => {
   const ctx = { get: (name) => (name === 'credentials' ? { resolve: async () => undefined } : undefined) };
   const provider = new OpenCodeSearchProvider(ctx, () => resolveOptions(ctx, undefined));
   const saved = process.env[DEFAULT_API_KEY_ENV];
   delete process.env[DEFAULT_API_KEY_ENV];
   delete process.env.OPENCODE_API_KEY;
   try {
-    assert.equal(provider.available(), true, 'resolution is deferred to search time');
+    assert.equal(provider.available(), true, '解析推迟到搜索时进行');
   } finally {
     if (saved !== undefined) process.env[DEFAULT_API_KEY_ENV] = saved;
   }
 });
 
-test('available() rejects an unparseable baseURL and non-positive limits', () => {
+test('available() 会拒绝无法解析的 baseURL 和非正数上限', () => {
   const ctx = { get: () => undefined };
   const make = (config) => new OpenCodeSearchProvider(ctx, () => resolveOptions(ctx, config));
   assert.equal(make({ baseURL: 'not a url', apiKey: 'k' }).available(), false);
@@ -260,7 +261,7 @@ test('available() rejects an unparseable baseURL and non-positive limits', () =>
   assert.equal(make({ apiKey: 'k' }).available(), true);
 });
 
-test('search() reports a missing credential with the stable code', async () => {
+test('search() 用稳定错误码报告凭据缺失', async () => {
   const ctx = { get: () => undefined };
   const provider = new OpenCodeSearchProvider(ctx, () => resolveOptions(ctx, undefined));
   const saved = process.env[DEFAULT_API_KEY_ENV];
@@ -280,7 +281,7 @@ test('search() reports a missing credential with the stable code', async () => {
   }
 });
 
-test('search() resolves the key from the credentials service first', async () => {
+test('search() 优先从凭据服务解析密钥', async () => {
   const ctx = {
     get: (name) => (name === 'credentials' ? { resolve: async () => ({ value: 'sk-from-store' }) } : undefined),
   };
@@ -288,7 +289,7 @@ test('search() resolves the key from the credentials service first', async () =>
   assert.equal(await provider.resolveApiKey(resolveOptions(ctx, {}), undefined), 'sk-from-store');
 });
 
-test('search() falls back to the environment when the store has no value', async () => {
+test('凭据库中没有值时 search() 回退到环境变量', async () => {
   const ctx = {
     get: (name) => (name === 'credentials' ? { resolve: async () => undefined } : undefined),
   };
@@ -303,7 +304,7 @@ test('search() falls back to the environment when the store has no value', async
   }
 });
 
-test('search() honours an already-aborted signal', async () => {
+test('search() 会遵从已经中止的信号', async () => {
   const ctx = { get: () => undefined };
   const provider = new OpenCodeSearchProvider(ctx, () => resolveOptions(ctx, { apiKey: 'sk-test' }));
   const controller = new AbortController();
@@ -317,7 +318,7 @@ test('search() honours an already-aborted signal', async () => {
   );
 });
 
-test('search() sends both auth headers, a session id, and the tool block', async () => {
+test('search() 会发送两个鉴权头、一个会话 id 和工具块', async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -334,10 +335,10 @@ test('search() sends both auth headers, a session id, and the tool block', async
     );
     const result = await provider.search({ query: 'deepseek v4' });
 
-    assert.equal(calls.length, 1, 'one attempt on success');
+    assert.equal(calls.length, 1, '成功时只尝试一次');
     assert.equal(calls[0].url, 'https://opencode.ai/zen/go/v1/messages');
     const headers = calls[0].init.headers;
-    assert.equal(headers['x-api-key'], 'sk-test', 'x-api-key authenticates');
+    assert.equal(headers['x-api-key'], 'sk-test', '由 x-api-key 完成鉴权');
     assert.equal(headers.authorization, 'Bearer sk-test');
     assert.equal(headers['anthropic-version'], '2023-06-01');
     assert.equal(headers['x-opencode-client'], 'dsh');
@@ -345,7 +346,7 @@ test('search() sends both auth headers, a session id, and the tool block', async
     assert.match(
       headers['x-opencode-session'],
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-      'a UUID v4 session id is generated per request',
+      '每次请求都会生成一个 UUID v4 会话 id',
     );
     assert.equal(calls[0].init.redirect, 'error');
 
@@ -357,7 +358,7 @@ test('search() sends both auth headers, a session id, and the tool block', async
   }
 });
 
-test('search() mints a fresh session id per request by default', async () => {
+test('默认情况下 search() 每次请求都新生成会话 id', async () => {
   const sessions = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
@@ -375,13 +376,13 @@ test('search() mints a fresh session id per request by default', async () => {
     await provider.search({ query: 'a' });
     await provider.search({ query: 'b' });
     assert.equal(sessions.length, 2);
-    assert.notEqual(sessions[0], sessions[1], 'per-request mode does not reuse an id');
+    assert.notEqual(sessions[0], sessions[1], 'per-request 模式不复用 id');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('search() reuses one session id in stable mode', async () => {
+test('stable 模式下 search() 复用同一个会话 id', async () => {
   const sessions = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
@@ -398,13 +399,13 @@ test('search() reuses one session id in stable mode', async () => {
     );
     await provider.search({ query: 'a' });
     await provider.search({ query: 'b' });
-    assert.equal(sessions[0], sessions[1], 'stable mode keeps prompt-cache affinity');
+    assert.equal(sessions[0], sessions[1], 'stable 模式保持提示词缓存亲和性');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('search() retries once on a retryable status, then succeeds', async () => {
+test('遇到可重试状态码时 search() 重试一次后成功', async () => {
   let attempts = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
@@ -424,14 +425,14 @@ test('search() retries once on a retryable status, then succeeds', async () => {
     const ctx = { get: () => undefined };
     const provider = new OpenCodeSearchProvider(ctx, () => resolveOptions(ctx, { apiKey: 'sk-test' }));
     const result = await provider.search({ query: 'x' });
-    assert.equal(attempts, 2, 'one retry after the first attempt');
+    assert.equal(attempts, 2, '首次尝试后重试一次');
     assert.equal(result.sources.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('search() does not retry an authentication failure', async () => {
+test('search() 不会重试鉴权失败', async () => {
   let attempts = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
@@ -448,20 +449,20 @@ test('search() does not retry an authentication failure', async () => {
       () => provider.search({ query: 'x' }),
       (error) => {
         assert.equal(error.code, 'WEB_PROVIDER_CREDENTIAL_MISSING');
-        // The hint names the mode that was actually billed, so a 401 in Go mode
-        // points at the subscription and a 401 in metered mode at the API key.
-        assert.match(error.message, /OpenCode Go subscription/u);
+        // 提示会指出实际被计费的那个模式，因此 Go 模式下的 401 指向订阅，
+        // 按量计费模式下的 401 指向 API 密钥。
+        assert.match(error.message, /OpenCode Go 套餐/u);
         assert.match(error.message, /goMode/u);
         return true;
       },
     );
-    assert.equal(attempts, 1, 'a bad key is not retried');
+    assert.equal(attempts, 1, '坏密钥不会被重试');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('search() retries once on MissingSessionID and explains the header', async () => {
+test('遇到 MissingSessionID 时 search() 重试一次并解释该请求头', async () => {
   let attempts = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => {
@@ -488,13 +489,13 @@ test('search() retries once on MissingSessionID and explains the header', async 
         return true;
       },
     );
-    assert.equal(attempts, 2, 'MissingSessionID gets one retry');
+    assert.equal(attempts, 2, 'MissingSessionID 会得到一次重试');
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('apply() registers the provider with the web seam', () => {
+test('apply() 会把提供方注册到 web seam', () => {
   const registered = [];
   const ctx = {
     get: () => undefined,
@@ -506,47 +507,46 @@ test('apply() registers the provider with the web seam', () => {
   assert.equal(registered[0].available(), true);
 });
 
-// ── identity ─────────────────────────────────────────────────────────────────
-// The plugin is named for what it is (OpenCode + DeepSeek), not for the plan it
-// happens to bill. "Go" is a switch, so it must not appear in any identity: the
-// loader name, the provider id, the settings namespace, or the attribution
-// header. The settings namespace in particular has to equal the Loader row id,
-// or the browser form mounts against a namespace nobody serves.
+// ── 身份标识 ─────────────────────────────────────────────────────────────────
+// 插件是按它是什么（OpenCode + DeepSeek）命名的，而不是按它恰好计费的那份套餐。
+// 「Go」只是一个开关，因此不能出现在任何身份标识里：loader 名称、提供方 id、设置
+// 命名空间、归属标识请求头。设置命名空间尤其必须等于 Loader 行 id，否则浏览器表单
+// 会挂载到一个没人提供的命名空间上。
 
-test('identity carries no plan name', () => {
+test('身份标识中不含套餐名', () => {
   assert.equal(name, 'web-search-opencode-ds');
   assert.equal(PROVIDER_ID, 'opencode-ds');
   assert.equal(SETTINGS_NAMESPACE, name);
   assert.equal(OFFICIAL_PROVIDER_ID, 'deepseek-official');
   for (const value of [name, PROVIDER_ID, SETTINGS_NAMESPACE, USER_AGENT]) {
-    assert.doesNotMatch(value, /go/iu, `${value} must not name the Go plan`);
+    assert.doesNotMatch(value, /go/iu, `${value} 不得出现 Go 套餐名`);
   }
 });
 
-// ── the Go / metered switch ──────────────────────────────────────────────────
+// ── Go / 按量计费开关 ────────────────────────────────────────────────────────
 
-test('goMode picks the endpoint, and an explicit baseURL still wins', () => {
+test('goMode 决定端点，而显式 baseURL 仍然优先', () => {
   assert.equal(GO_BASE_URL, 'https://opencode.ai/zen/go/v1');
   assert.equal(ZEN_BASE_URL, 'https://opencode.ai/zen/v1');
-  assert.equal(DEFAULT_BASE_URL, GO_BASE_URL, 'goMode is the default mode');
+  assert.equal(DEFAULT_BASE_URL, GO_BASE_URL, 'goMode 是默认模式');
 
   const ctx = { get: () => undefined };
-  assert.equal(resolveOptions(ctx, {}).baseURL, GO_BASE_URL, 'default');
+  assert.equal(resolveOptions(ctx, {}).baseURL, GO_BASE_URL, '默认');
   assert.equal(resolveOptions(ctx, { goMode: true }).baseURL, GO_BASE_URL);
-  assert.equal(resolveOptions(ctx, { goMode: false }).baseURL, ZEN_BASE_URL, 'metered mode');
+  assert.equal(resolveOptions(ctx, { goMode: false }).baseURL, ZEN_BASE_URL, '按量计费模式');
   assert.equal(
     resolveOptions(ctx, { goMode: false, baseURL: 'https://self.hosted/v1' }).baseURL,
     'https://self.hosted/v1',
-    'an explicit endpoint overrides the mode',
+    '显式端点会覆盖模式设置',
   );
   assert.equal(
     resolveOptions(ctx, { goMode: false, baseURL: '' }).baseURL,
     ZEN_BASE_URL,
-    'a blank endpoint falls back to the mode',
+    '端点留空时回退到模式决定的值',
   );
 });
 
-test('search() posts to the metered endpoint when goMode is off', async () => {
+test('goMode 关闭时 search() 发往按量计费端点', async () => {
   const seen = [];
   const original = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -567,7 +567,7 @@ test('search() posts to the metered endpoint when goMode is off', async () => {
   }
 });
 
-test('a 402 names the metered endpoint and points back at goMode', async () => {
+test('402 会指明按量计费端点并指回 goMode', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () =>
     new Response(
@@ -594,9 +594,9 @@ test('a 402 names the metered endpoint and points back at goMode', async () => {
   }
 });
 
-// ── the override-official switch ─────────────────────────────────────────────
+// ── 覆盖官方配置的开关 ───────────────────────────────────────────────────────
 
-/** A ctx whose `web` registry holds a stub `deepseek-official` provider. */
+/** 一个 `web` 注册表里放着 `deepseek-official` 桩提供方的 ctx。 */
 function ctxWithOfficial(official) {
   const web = {
     registerSearchProvider: () => () => {},
@@ -605,13 +605,13 @@ function ctxWithOfficial(official) {
   return { get: (key) => (key === 'web' ? web : undefined), web };
 }
 
-test('overrideOfficial defaults on, so this plugin is authoritative', () => {
+test('overrideOfficial 默认开启，因此本插件是权威', () => {
   const ctx = { get: () => undefined };
   assert.equal(resolveOptions(ctx, {}).overrideOfficial, true);
   assert.equal(resolveOptions(ctx, { overrideOfficial: false }).overrideOfficial, false);
 });
 
-test('overrideOfficial off delegates the search to the official provider', async () => {
+test('overrideOfficial 关闭时把搜索委托给官方提供方', async () => {
   const calls = [];
   const official = {
     id: OFFICIAL_PROVIDER_ID,
@@ -622,8 +622,8 @@ test('overrideOfficial off delegates the search to the official provider', async
     },
   };
   const ctx = ctxWithOfficial(official);
-  // No credential anywhere: the OpenCode path would throw, so a clean result
-  // proves the request never went down it.
+  // 哪里都没有凭据：OpenCode 这条路径会抛错，因此能干净地返回结果就证明
+  // 该请求从未走这条路。
   const provider = new OpenCodeSearchProvider(ctx, () =>
     resolveOptions(ctx, { overrideOfficial: false }));
   const result = await provider.search({ query: 'delegated' });
@@ -631,7 +631,7 @@ test('overrideOfficial off delegates the search to the official provider', async
   assert.equal(result.sources[0].url, 'https://official.example/1');
 });
 
-test('overrideOfficial off forwards the abort signal to the official provider', async () => {
+test('overrideOfficial 关闭时把中止信号转发给官方提供方', async () => {
   let seen;
   const official = {
     id: OFFICIAL_PROVIDER_ID,
@@ -649,7 +649,7 @@ test('overrideOfficial off forwards the abort signal to the official provider', 
   assert.equal(seen, controller.signal);
 });
 
-test('overrideOfficial off without the official provider explains itself', async () => {
+test('overrideOfficial 关闭且没有官方提供方时会给出解释', async () => {
   const ctx = ctxWithOfficial(undefined);
   const provider = new OpenCodeSearchProvider(ctx, () =>
     resolveOptions(ctx, { overrideOfficial: false }));
@@ -659,24 +659,24 @@ test('overrideOfficial off without the official provider explains itself', async
     (error) => {
       assert.ok(error instanceof WebSearchError);
       assert.match(error.message, /deepseek-official/u);
-      assert.match(error.message, /not registered/u);
+      assert.match(error.message, /未注册/u);
       return true;
     },
   );
 });
 
-test('overrideOfficial off mirrors the official provider availability', () => {
+test('overrideOfficial 关闭时可用性跟随官方提供方', () => {
   const ctx = ctxWithOfficial({ id: OFFICIAL_PROVIDER_ID, available: () => false, search: async () => ({}) });
   const provider = new OpenCodeSearchProvider(ctx, () =>
     resolveOptions(ctx, { overrideOfficial: false, apiKey: 'sk-ignored' }));
-  assert.equal(provider.available(), false, 'a local key does not make pass-through usable');
+  assert.equal(provider.available(), false, '本地密钥并不能让直通模式变得可用');
 });
 
-// ── credential references ────────────────────────────────────────────────────
-// Renaming the plugin must not lock existing installs out of search: a key
-// stored under the pre-rename reference has to keep resolving.
+// ── 凭据引用 ─────────────────────────────────────────────────────────────────
+// 重命名插件不能把既有安装挡在搜索之外：存放在改名之前那个引用下的密钥必须继续
+// 能解析到。
 
-test('credentialRefs tries the configured reference first, then both spellings', () => {
+test('credentialRefs 先试配置的引用，再试两种写法', () => {
   assert.deepEqual(credentialRefs({ apiKeyEnv: 'CUSTOM_KEY' }), [
     'CUSTOM_KEY',
     DEFAULT_API_KEY_ENV,
@@ -687,13 +687,13 @@ test('credentialRefs tries the configured reference first, then both spellings',
   assert.deepEqual(
     credentialRefs({ apiKeyEnv: FALLBACK_API_KEY_ENV }),
     [FALLBACK_API_KEY_ENV, DEFAULT_API_KEY_ENV],
-    'no duplicate when the configured reference is already canonical',
+    '配置的引用已是规范写法时不会重复',
   );
   assert.equal(DEFAULT_API_KEY_ENV, 'OPENCODE_API_KEY');
   assert.equal(FALLBACK_API_KEY_ENV, 'OPENCODE_GO_API_KEY');
 });
 
-test('search() resolves a key stored under the pre-rename reference', async () => {
+test('search() 能解析存放在改名之前引用下的密钥', async () => {
   const asked = [];
   const ctx = {
     get: (key) =>
@@ -726,11 +726,11 @@ test('search() resolves a key stored under the pre-rename reference', async () =
   }
 });
 
-// ── the settings schema ──────────────────────────────────────────────────────
-// A field is editable from the Plugins page only while it is volatile, and the
-// form is served only while the row declares a Config at all.
+// ── 设置 schema ──────────────────────────────────────────────────────────────
+// 只有当字段是 volatile 时才能从插件页编辑，而只有当该行声明了 Config 时表单才会
+// 被提供出来。
 
-test('Config publishes both switches as volatile booleans', () => {
+test('Config 把两个开关都发布为 volatile 布尔字段', () => {
   const field = (name) => Config.dict[name];
   assert.equal(field('overrideOfficial').type, 'boolean');
   assert.equal(field('overrideOfficial').meta.volatile, true);
@@ -745,12 +745,12 @@ test('Config publishes both switches as volatile booleans', () => {
   assert.equal(field('apiKeyEnv').meta.role, 'credential-ref');
   assert.equal(field('apiKeyEnv').meta.default, DEFAULT_API_KEY_ENV);
 
-  // Load-time-only knobs stay non-volatile so they never appear in the form.
+  // 仅在加载期生效的旋钮保持非 volatile，因此永远不会出现在表单里。
   for (const name of ['retries', 'sessionMode', 'queryTemplate']) {
-    assert.notEqual(field(name).meta.volatile, true, `${name} should stay load-time config`);
+    assert.notEqual(field(name).meta.volatile, true, `${name} 应保持为加载期配置`);
   }
-  // The schema must name every key the bundle patch sets, because a patch
-  // replaces the whole config of its row rather than merging.
+  // schema 必须列出 bundle 补丁设置的每一个键，因为补丁是整体替换其所在行的 config，
+  // 而不是做合并。
   assert.deepEqual(Object.keys(Config.dict).sort(), [
     'apiKey', 'apiKeyEnv', 'apiVersion', 'baseURL', 'goMode', 'includeAnswer',
     'maxTokens', 'maxUses', 'model', 'overrideOfficial', 'queryTemplate',
@@ -758,7 +758,7 @@ test('Config publishes both switches as volatile booleans', () => {
   ]);
 });
 
-test('Config accepts an empty config and applies every default', () => {
+test('Config 接受空配置并应用每一个默认值', () => {
   const ctx = { get: () => undefined };
   const options = resolveOptions(ctx, new Config({}));
   assert.equal(options.baseURL, GO_BASE_URL);

@@ -1,19 +1,18 @@
 /**
- * `dsh-web-search-opencode-ds` — browser half.
+ * `dsh-web-search-opencode-ds` —— 浏览器半。
  *
- * A hand-written bundle in the same shape the shipped settings pages ship in:
- * `window.__ModuleLoader__.load({ id, factory })` with a lazy-CJS factory. DSH's
- * modules roster discovers it from this package's `dsh.client` declaration and
- * serves it at `/plugins/dsh-web-search-opencode-ds/client.js`.
+ * 手写的 bundle，形态与内置设置页一致：`window.__ModuleLoader__.load({ id, factory })`
+ * 配一个惰性 CJS 工厂。DSH 的模块清单会根据本包的 `dsh.client` 声明发现它，并在
+ * `/plugins/dsh-web-search-opencode-ds/client.js` 上提供它。
  *
- * The page edits the `web-search-opencode-ds` settings namespace, which is the
- * Host half's own `Config` (see index.js). It only mounts while the Host serves
- * that namespace, so a profile without the plugin shows no trace of it.
+ * 该页面编辑的是 `web-search-opencode-ds` 设置命名空间，也就是 Host 半自己的
+ * `Config`（见 index.js）。只有当 Host 提供该命名空间时它才会挂载，因此没有装这个
+ * 插件的 profile 看不到它的任何痕迹。
  *
- * `require` here resolves two specifiers only — `react/jsx-runtime` and
- * `@deepseek-ai/dsh-client-ui-primitives` — both of which are static modules of
- * the shell's own module table. The shipped `@deepseek-ai/dsh-client-ui-settings-web-search`
- * page requires exactly the same pair, which is the evidence they are seeded.
+ * 这里的 `require` 只解析两个说明符 —— `react/jsx-runtime` 和
+ * `@deepseek-ai/dsh-client-ui-primitives` —— 二者都是 shell 自身模块表中的静态模块。
+ * 内置的 `@deepseek-ai/dsh-client-ui-settings-web-search` 页面要求的正是同一对，
+ * 这就是它们已被预置的证据。
  */
 window.__ModuleLoader__.load({
   id: 'dsh-web-search-opencode-ds',
@@ -26,7 +25,7 @@ window.__ModuleLoader__.load({
     const P = require('@deepseek-ai/dsh-client-ui-primitives');
 
     // #region locales
-    /** English copy. */
+    /** 英文文案。 */
     const en = {
       title: 'Web search (OpenCode)',
       description: 'Run DeepSeek web search through OpenCode instead of the official endpoint.',
@@ -53,7 +52,7 @@ window.__ModuleLoader__.load({
       invalidNumber: 'Enter a number, or leave blank to use the default.'
     };
 
-    /** Simplified Chinese copy. */
+    /** 简体中文文案。 */
     const zh = {
       title: '网页搜索（OpenCode）',
       description: '通过 OpenCode 调用 DeepSeek 网页搜索，替代官方接口地址。',
@@ -82,31 +81,29 @@ window.__ModuleLoader__.load({
     };
     // #endregion
 
-    /** Dictionary namespace owned by this plugin. */
+    /** 本插件拥有的词典命名空间。 */
     const NS = 'settings.webSearchOpenCode';
 
     /**
-     * The Host settings namespace this page edits. Spelled here rather than
-     * imported: a client package must not depend on a Host package. It equals
-     * the Loader row id, which is the Host half's `name` export.
+     * 本页面所编辑的 Host 设置命名空间。在这里写死而不是导入：客户端包不能依赖
+     * Host 包。它等于 Loader 行 id，也就是 Host 半的 `name` 导出。
      */
     const SETTINGS_NS = 'web-search-opencode-ds';
 
-    /** Credential reference the form writes when the section names none. */
+    /** 当该区段没有指定引用时，表单写入的凭据引用。 */
     const DEFAULT_API_KEY_REF = 'OPENCODE_API_KEY';
 
-    /** Form field the credential control stages under. */
+    /** 凭据控件暂存所用的表单字段。 */
     const API_KEY_FIELD = 'apiKey';
 
     /**
-     * A boolean field kind for {@link P.SettingsFormModel}.
+     * {@link P.SettingsFormModel} 用的一种布尔字段类型。
      *
-     * The shipped field kinds are text and number only; a toggle needs its own,
-     * but the contract is small — `format` renders the stored value into the
-     * staged text, `parse` turns staged text back into a write.
+     * 内置的字段类型只有文本和数字；开关需要自己的类型，但契约很小 —— `format` 把
+     * 存储值渲染成暂存文本，`parse` 把暂存文本变回一次写入。
      *
-     * @param field - the config field name.
-     * @returns the field spec.
+     * @param field - 配置字段名。
+     * @returns 字段规格。
      */
     function settingsBooleanField(field) {
       return {
@@ -116,7 +113,7 @@ window.__ModuleLoader__.load({
       };
     }
 
-    /** The labels the shared settings form renders. */
+    /** 共享设置表单所渲染的标签。 */
     function formLabels(t) {
       return {
         unavailable: t('unavailable'),
@@ -128,9 +125,8 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One switch row. The shipped form has no boolean field component, so this
-     * renders the same shape a value field does — label, hint, control — around
-     * the exported `Switch` primitive.
+     * 一个开关行。内置表单没有布尔字段组件，因此这里围绕导出的 `Switch` 原语渲染
+     * 与数值字段相同的形态 —— 标签、提示、控件。
      */
     function ToggleRow(props) {
       const { t } = props;
@@ -204,7 +200,7 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Render the provider's one-liner or its settings form, as the Plugins page asks.
+     * 按插件页的要求，渲染提供方的一句话说明或它的设置表单。
      */
     function WebSearchCard(props) {
       const { t } = props;
@@ -300,18 +296,16 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Bridges the settings scope and the credentials domain onto the page.
+     * 把设置作用域与凭据域桥接到页面上。
      *
-     * The key is the one control that does not live in the section: its literal
-     * never rides a response, so the page learns only whether one is configured
-     * and writes it through the credentials domain, addressed by the reference
-     * the section names. It is staged with the rest of the form so one save
-     * covers everything the page shows.
+     * 密钥是唯一不存放在该区段里的控件：它的字面值从不随响应下发，因此页面只能得知
+     * 是否已配置，并通过凭据域写入，寻址用的是该区段指定的引用。它和表单其余部分一起
+     * 暂存，这样一次保存就能覆盖页面展示的全部内容。
      */
     class WebSearchCardController {
       /**
-       * @param scope - the bound settings scope for the settings namespace.
-       * @param ctx - the page plugin's context.
+       * @param scope - 该设置命名空间已绑定的设置作用域。
+       * @param ctx - 页面插件的上下文。
        */
       constructor(scope, ctx) {
         this.scope = scope;
@@ -339,7 +333,7 @@ window.__ModuleLoader__.load({
         this.readCredential();
       }
 
-      /** Build the page's snapshot from the form's current reads. */
+      /** 用表单当前的读取结果构建页面快照。 */
       projection() {
         return {
           ...this.form.shell(),
@@ -354,10 +348,10 @@ window.__ModuleLoader__.load({
       }
 
       /**
-       * Ask the credentials domain about the reference the section currently names.
+       * 向凭据域询问该区段当前指定的引用。
        *
-       * The answer is stored with the reference it describes, so a response only
-       * publishes while it still answers for the reference in force.
+       * 答案与它所描述的那个引用一起保存，因此只有当响应仍然对应生效中的引用时才会
+       * 发布出去。
        */
       async readCredential() {
         const ref = refOf(this.scope.getSnapshot());
@@ -383,13 +377,13 @@ window.__ModuleLoader__.load({
         this.store.set(this.projection());
       }
 
-      /** Re-read after the Host reports a change to the reference this page watches. */
+      /** Host 报告本页面所关注的引用发生变化后重新读取。 */
       refreshCredential(ref) {
         if (ref !== this.credential.ref) return;
         this.readCredential();
       }
 
-      /** Build the face the page's slot registration injects. */
+      /** 构建页面槽位注册所注入的那张「面孔」。 */
       inject() {
         return {
           hooks: { webSearchCard: this.store },
@@ -397,38 +391,38 @@ window.__ModuleLoader__.load({
         };
       }
 
-      /** Write the staged key, then re-read whether the Host now holds one. */
+      /** 写入暂存的密钥，然后重新读取 Host 现在是否已持有密钥。 */
       async writeKey(value) {
         await this.ctx.remote.credentials.set(refOf(this.scope.getSnapshot()), value);
         await this.readCredential();
         return this.credential.configured;
       }
 
-      /** Release configuration subscriptions. */
+      /** 释放配置订阅。 */
       dispose() {
         this.unsubscribe();
         this.form.dispose();
       }
     }
 
-    /** The credential reference the section names, or the provider's default. */
+    /** 该区段指定的凭据引用，未指定时用提供方的默认值。 */
     function refOf(snapshot) {
       const declared = snapshot.value?.apiKeyEnv;
       return declared !== undefined && declared.length > 0 ? declared : DEFAULT_API_KEY_REF;
     }
 
-    /** Required services (cordis fiber inject). */
+    /** 必需的服务（cordis fiber inject）。 */
     const inject = ['slots', 'locale', 'remote', 'remote.credentials', 'configForms'];
 
     /**
-     * Mount the settings page while the Host serves its namespace.
-     * @param ctx - the browser plugin context.
+     * 在 Host 提供其命名空间期间挂载设置页。
+     * @param ctx - 浏览器插件上下文。
      */
     function apply(ctx) {
       const t = ctx.locale.bind(NS);
       ctx.effect(
         () => ctx.locale.register(NS, { zh, en }),
-        'web-search-opencode-ds: dictionaries'
+        'web-search-opencode-ds: 词典'
       );
 
       const card = new WebSearchCardController(ctx.configForms.get(SETTINGS_NS), ctx);
@@ -436,14 +430,14 @@ window.__ModuleLoader__.load({
         () => () => {
           card.dispose();
         },
-        'web-search-opencode-ds: form subscription'
+        'web-search-opencode-ds: 表单订阅'
       );
       ctx.effect(
         () =>
           ctx.remote.$on('credentials/reference-updated', (ref) => {
             card.refreshCredential(ref);
           }),
-        'web-search-opencode-ds: credential invalidations'
+        'web-search-opencode-ds: 凭据失效通知'
       );
       ctx.effect(
         () =>
@@ -453,7 +447,7 @@ window.__ModuleLoader__.load({
                 {
                   name: 'plugins.item',
                   id: 'web-search-opencode',
-                  // Renders directly after the official Web search card (order 40).
+                  // 紧跟在官方网页搜索卡片（order 40）之后渲染。
                   order: 41,
                   label: () => t('title'),
                   locale: NS,
@@ -463,7 +457,7 @@ window.__ModuleLoader__.load({
               )
             )
           ),
-        'web-search-opencode-ds: page'
+        'web-search-opencode-ds: 设置页'
       );
     }
 
