@@ -1,6 +1,8 @@
 {
-  "title": "网页搜索（OpenCode / DeepSeek）",
-  "description": "注册 opencode-ds 搜索提供商，经 OpenCode 调用 DeepSeek 官方的服务端 web_search，并自带设置页。",
+  "meta": {
+    "title": "网页搜索（OpenCode / DeepSeek）",
+    "description": "注册 opencode-ds 搜索提供商，经 OpenCode 调用 DeepSeek 官方的服务端 web_search，并自带设置页。"
+  },
   "settings": {
     "title": "网页搜索（OpenCode）",
     "description": "通过 OpenCode 调用 DeepSeek 网页搜索，替代官方接口地址。"
