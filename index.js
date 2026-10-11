@@ -1,50 +1,45 @@
 /**
- * `dsh-web-search-opencode-ds` — a DSH `WebSearchProvider` (id `opencode-ds`)
- * that runs DeepSeek's official server-side web search through OpenCode's
- * Anthropic-compatible Messages endpoint. `goMode` chooses which OpenCode plan
- * that is: the flat-rate Go subscription (`/zen/go/v1`, the default) or the
- * default metered API (`/zen/v1`).
+ * `dsh-web-search-opencode-ds` —— 一个 DSH `WebSearchProvider`（id 为
+ * `opencode-ds`），通过 OpenCode 的 Anthropic 兼容 Messages 接口运行 DeepSeek
+ * 官方的服务端网页搜索。`goMode` 决定用哪一份 OpenCode 套餐：包月的 Go 订阅
+ * （`/zen/go/v1`，默认值）还是默认的按量计费 API（`/zen/v1`）。
  *
- * ## What was verified against the live endpoint (2026-10-02)
+ * ## 针对线上端点实测确认过的事实（2026-10-02）
  *
- * | Observation | Result |
+ * | 观察项 | 结果 |
  * |---|---|
- * | `POST https://opencode.ai/zen/go/v1/messages`, `model: deepseek-v4-flash`, tool `web_search_20250305` | **HTTP 200**, real `web_search_tool_result` blocks |
- * | same request **without** `x-opencode-session` | **HTTP 400** `{"type":"error","error":{"type":"MissingSessionID",...}}` |
- * | `Authorization: Bearer <key>` **only** (no `x-api-key`) | **HTTP 401** `AuthError: Missing API key.` |
- * | `x-api-key: <key>` only | **HTTP 200** |
- * | `GET /zen/go/v1/models` | 200; `deepseek-v4-flash` is a listed id |
- * | candidate session-creation paths (`/sessions`, `/session`, ...) | all **404** — there is no session-creation endpoint |
+ * | `POST https://opencode.ai/zen/go/v1/messages`，`model: deepseek-v4-flash`，工具 `web_search_20250305` | **HTTP 200**，返回真实的 `web_search_tool_result` 块 |
+ * | 同样的请求**不带** `x-opencode-session` | **HTTP 400** `{"type":"error","error":{"type":"MissingSessionID",...}}` |
+ * | **只**发 `Authorization: Bearer <key>`（不带 `x-api-key`） | **HTTP 401** `AuthError: Missing API key.` |
+ * | 只发 `x-api-key: <key>` | **HTTP 200** |
+ * | `GET /zen/go/v1/models` | 200；`deepseek-v4-flash` 在 id 列表中 |
+ * | 候选的会话创建路径（`/sessions`、`/session` 等） | 全部 **404** —— 不存在会话创建端点 |
  *
- * Consequences baked into this implementation:
+ * 由此固化进本实现的结论：
  *
- * 1. **`x-opencode-session` is mandatory** and is *client-generated*. The provider
- *    sends a fresh UUID v4 per search by default (`sessionMode: 'per-request'`);
- *    `'stable'` reuses one id for every search. There is no registration call and
- *    no response field carrying a session id, so the "create a session first"
- *    branch does not exist to take.
- * 2. **`x-api-key` is the header that actually authenticates.** The task spec asked
- *    for `Authorization: Bearer` only; sending that alone is rejected with 401.
- *    Both headers are sent so the provider survives either gateway behaviour.
- * 3. `web_search_result` items carry `title`, `url` and `page_age` (plus an opaque
- *    `encrypted_content`), but **no inline excerpt**. Snippets are therefore joined
- *    from `citations[].cited_text` when a deployment emits them, and omitted
- *    otherwise rather than being fabricated.
+ * 1. **`x-opencode-session` 是必需的**，且由*客户端生成*。提供方默认每次搜索
+ *    都发一个新的 UUID v4（`sessionMode: 'per-request'`）；`'stable'` 则所有
+ *    搜索复用同一个 id。这里既没有注册调用，响应里也没有携带会话 id 的字段，
+ *    所以「先创建会话」这条分支并不存在。
+ * 2. **真正完成鉴权的是 `x-api-key` 这个请求头。** 任务说明只要求发
+ *    `Authorization: Bearer`；只发它会得到 401。因此两个头都会发送，好让提供方
+ *    在两种网关行为下都能存活。
+ * 3. `web_search_result` 项带有 `title`、`url` 和 `page_age`（外加一个不透明的
+ *    `encrypted_content`），但**没有内联摘要**。因此当某个部署会输出
+ *    `citations[].cited_text` 时，就由它拼出摘要；否则直接省略，而不是凭空编造。
  *
- * ## Settings page
+ * ## 设置页
  *
- * The plugin declares a `Config` schema whose editable fields are `.volatile()`,
- * which is exactly what makes them show up in Settings → Plugins → this plugin
- * and survive a live edit. `client.js` (the browser half, declared through
- * `dsh.client` in package.json) draws the form.
+ * 插件声明了一个 `Config` schema，其中可编辑字段都带 `.volatile()` —— 这正是
+ * 它们能出现在「设置 → 插件 → 本插件」里、并且热改后依然生效的原因。
+ * `client.js`（浏览器半，通过 package.json 里的 `dsh.client` 声明）负责绘制表单。
  *
- * ## `@deepseek-ai/*` imports
+ * ## `@deepseek-ai/*` 导入
  *
- * DSH's own packages do not resolve from a DSH profile directory, so a
- * profile-installed plugin cannot `import '@deepseek-ai/dsh-web'`. This package
- * therefore only imports `@deepseek-ai/schemastery`, which is a public npm
- * package (MIT) installed into this package's own `node_modules` — the one
- * import Node resolves relative to this file.
+ * DSH 自身的包无法从 DSH profile 目录解析，因此装在 profile 里的插件不能
+ * `import '@deepseek-ai/dsh-web'`。所以本包只导入 `@deepseek-ai/schemastery`：
+ * 它是一个公开的 npm 包（MIT），装在本包自己的 `node_modules` 里 —— 也是 Node
+ * 相对本文件唯一能解析到的那个导入。
  *
  * @module dsh-web-search-opencode-ds
  */
@@ -52,139 +47,135 @@
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
 
-/** Cordis plugin name used by loader diagnostics and as the settings namespace. */
+/** Cordis 插件名，用于 loader 诊断，同时也作为设置命名空间。 */
 export const name = 'web-search-opencode-ds';
 
-/** The web seam this provider registers into. */
+/** 本提供方注册进的那个 web seam。 */
 export const inject = ['web'];
 
-/** Stable provider id this plugin registers under. */
+/** 本插件注册时使用的稳定提供方 id。 */
 export const PROVIDER_ID = 'opencode-ds';
 
-/** Settings namespace this plugin's form edits (the Loader row id, not the package name). */
+/** 本插件表单所编辑的设置命名空间（是 Loader 行 id，不是包名）。 */
 export const SETTINGS_NAMESPACE = name;
 
-/** The shipped provider this one can defer to when `overrideOfficial` is off. */
+/** 内置提供方；当 `overrideOfficial` 关闭时可以委托给它。 */
 export const OFFICIAL_PROVIDER_ID = 'deepseek-official';
 
 /**
- * OpenCode Go base: a flat-rate subscription plan. `/messages` is appended.
- * This is the endpoint the provider used before the mode switch existed.
+ * OpenCode Go 基址：包月订阅套餐。使用时会在后面拼上 `/messages`。
+ * 这也是模式开关出现之前提供方一直使用的端点。
  */
 export const GO_BASE_URL = 'https://opencode.ai/zen/go/v1';
 
 /**
- * OpenCode Zen base: the default metered (pay-as-you-go) API. Verified to serve
- * the same catalog shape as Go (`/zen/v1/models` → 85 ids vs Go's 43), and
- * `deepseek-v4-flash` is present in both. A request here bills the account
- * balance instead of the Go plan, so it answers HTTP 402 "Insufficient account
- * funds" until the account is topped up — a configuration fact, not a bug in
- * this plugin.
+ * OpenCode Zen 基址：默认的按量计费（用多少付多少）API。已确认它提供的目录形态
+ * 与 Go 一致（`/zen/v1/models` 返回 85 个 id，Go 是 43 个），且两者都包含
+ * `deepseek-v4-flash`。请求打到这里的费用从账户余额扣除而不是走 Go 套餐，因此在
+ * 账户充值之前会返回 HTTP 402「Insufficient account funds」—— 这是配置事实，
+ * 不是本插件的 bug。
  */
 export const ZEN_BASE_URL = 'https://opencode.ai/zen/v1';
 
-/** Back-compat alias: the base used when `goMode` is on. */
+/** 向后兼容别名：`goMode` 开启时使用的基址。 */
 export const DEFAULT_BASE_URL = GO_BASE_URL;
 
-/** Default Anthropic-format model id (verified present in `/zen/go/v1/models`). */
+/** 默认的 Anthropic 格式模型 id（已确认存在于 `/zen/go/v1/models`）。 */
 export const DEFAULT_MODEL = 'deepseek-v4-flash';
 
-/** Default `anthropic-version` header value. */
+/** 默认的 `anthropic-version` 请求头取值。 */
 export const DEFAULT_API_VERSION = '2023-06-01';
 
-/** Default upper bound on generated tokens for the Messages request. */
+/** Messages 请求生成 token 数的默认上限。 */
 export const DEFAULT_MAX_TOKENS = 4096;
 
-/** Default maximum `web_search` server-tool uses per request. */
+/** 单次请求中 `web_search` 服务端工具默认最多可使用几次。 */
 export const DEFAULT_MAX_USES = 5;
 
-/** Default per-attempt timeout. */
+/** 每次尝试的默认超时时间。 */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
-/** Default number of retries after the first attempt (so 2 attempts total). */
+/** 首次尝试之后的默认重试次数（即总共 2 次尝试）。 */
 export const DEFAULT_RETRIES = 1;
 
-/** Primary credential reference. */
+/** 首选凭据引用。 */
 export const DEFAULT_API_KEY_ENV = 'OPENCODE_API_KEY';
 
-/** Secondary credential reference, kept so an existing OpenCode Go key still resolves. */
+/** 次级凭据引用，保留它是为了让已有的 OpenCode Go 密钥仍能解析到。 */
 export const FALLBACK_API_KEY_ENV = 'OPENCODE_GO_API_KEY';
 
-/** Attribution header sent on every request. */
+/** 每次请求都会发送的归属标识请求头。 */
 export const USER_AGENT = 'dsh-web-search-opencode-ds/0.2.0';
 
-/** Prompt template; `{query}` is replaced with the caller's query. */
+/** 提示词模板；`{query}` 会被替换为调用方的查询词。 */
 export const DEFAULT_QUERY_TEMPLATE = 'Perform a web search for the query: {query}';
 
-/** Default session-id strategy: one fresh UUID v4 per search. */
+/** 默认的会话 id 策略：每次搜索都新生成一个 UUID v4。 */
 export const DEFAULT_SESSION_MODE = 'per-request';
 
-/** Default for `goMode`: on, i.e. bill the OpenCode Go plan. */
+/** `goMode` 的默认值：开启，即计入 OpenCode Go 套餐。 */
 export const DEFAULT_GO_MODE = true;
 
-/** Default for `overrideOfficial`: on, i.e. this plugin answers instead of the shipped provider. */
+/** `overrideOfficial` 的默认值：开启，即由本插件而非内置提供方作答。 */
 export const DEFAULT_OVERRIDE_OFFICIAL = true;
 
 /**
- * The row's Config schema.
+ * 该行的 Config schema。
  *
- * `.volatile()` is what publishes a field to the settings form: DSH projects the
- * volatile fields of an active profile entry into a form namespace, and the
- * settings service persists edits through the profile's Cordis patch. Fields
- * left non-volatile stay load-time config, editable only in `cordis.patch.yml`.
+ * `.volatile()` 正是把字段发布到设置表单的机制：DSH 会把生效 profile 条目中的
+ * volatile 字段投影到一个表单命名空间，设置服务则通过 profile 的 Cordis 补丁
+ * 持久化改动。非 volatile 的字段仍是加载期配置，只能在 `cordis.patch.yml` 里改。
  *
- * The schema must name every key the bundle patch sets — a patch REPLACES the
- * whole `config` of its target row, so anything absent here would be dropped or
- * rejected at load.
+ * schema 必须列出 bundle 补丁设置的每一个键 —— 补丁会**整体替换**目标行的
+ * `config`，因此这里缺失的键要么被丢弃，要么在加载时被拒绝。
  */
 export const Config = z.object({
-  /** Literal key. Wins over the credential reference; never persisted by the form. */
+  /** 字面密钥。优先于凭据引用；表单从不持久化它。 */
   apiKey: z.string().role('secret').volatile(),
-  /** Credential reference resolved through `ctx.credentials`, then the environment. */
+  /** 凭据引用，先经 `ctx.credentials` 解析，再回退到环境变量。 */
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV).volatile(),
-  /** Explicit endpoint base. Blank means "derive from `goMode`". */
+  /** 显式指定的端点基址。留空表示「由 `goMode` 推导」。 */
   baseURL: z.string().volatile(),
-  /** Anthropic-format model id. */
+  /** Anthropic 格式的模型 id。 */
   model: z.string().default(DEFAULT_MODEL).volatile(),
-  /** `anthropic-version` header value. */
+  /** `anthropic-version` 请求头取值。 */
   apiVersion: z.string().default(DEFAULT_API_VERSION).volatile(),
-  /** Upper bound on generated tokens. */
+  /** 生成 token 数的上限。 */
   maxTokens: z.number().step(1).min(1).default(DEFAULT_MAX_TOKENS).volatile(),
-  /** Upper bound on server-side searches per request. */
+  /** 单次请求中服务端搜索次数的上限。 */
   maxUses: z.number().step(1).min(1).default(DEFAULT_MAX_USES).volatile(),
-  /** Per-attempt timeout. */
+  /** 每次尝试的超时时间。 */
   timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS).volatile(),
-  /** Retries after the first attempt. */
+  /** 首次尝试之后的重试次数。 */
   retries: z.number().step(1).min(0).default(DEFAULT_RETRIES),
-  /** Session-id strategy. */
+  /** 会话 id 策略。 */
   sessionMode: z.union(['per-request', 'stable']).default(DEFAULT_SESSION_MODE),
-  /** Prompt template; `{query}` is substituted. */
+  /** 提示词模板；会替换其中的 `{query}`。 */
   queryTemplate: z.string().default(DEFAULT_QUERY_TEMPLATE),
-  /** Expose the model's prose answer as the result's `content`. */
+  /** 是否把模型的散文式回答作为结果的 `content` 暴露出去。 */
   includeAnswer: z.boolean().default(false).volatile(),
   /**
-   * `true` (default): use the OpenCode endpoint configured here — this plugin
-   * overrides the shipped provider's configuration.
-   * `false`: leave the official provider's configuration in charge by
-   * delegating every search to `deepseek-official`, unchanged.
+   * `true`（默认）：使用这里配置的 OpenCode 端点 —— 本插件覆盖内置提供方的配置。
+   * `false`：把每次搜索原样委托给 `deepseek-official`，让官方提供方自己的配置
+   * 继续生效。
    */
   overrideOfficial: z.boolean().default(DEFAULT_OVERRIDE_OFFICIAL).volatile(),
   /**
-   * `true` (default): the OpenCode Go flat-rate plan endpoint (`/zen/go/v1`).
-   * `false`: the default metered API (`/zen/v1`), billed per use.
+   * `true`（默认）：走 OpenCode Go 包月套餐端点（`/zen/go/v1`）。
+   * `false`：走默认的按量计费 API（`/zen/v1`），按次计费。
    */
   goMode: z.boolean().default(DEFAULT_GO_MODE).volatile(),
 });
 
-/** HTTP statuses worth one more attempt. */
+/** 值得再试一次的 HTTP 状态码。 */
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
-/** Stable, machine-routable error carrying the seam's error vocabulary. */
+/** 携带 seam 错误词汇表的稳定、可机器路由的错误。 */
 export class WebSearchError extends Error {
   /**
-   * @param {string} message - human-readable detail.
-   * @param {string} code - stable code, e.g. `WEB_PROVIDER_CREDENTIAL_MISSING`.
-   * @param {{ cause?: unknown, retryable?: boolean }} [options] - cause and retry hint.
+   * @param {string} message - 供人阅读的详细信息。
+   * @param {string} code - 稳定错误码，例如 `WEB_PROVIDER_CREDENTIAL_MISSING`。
+   * @param {{ cause?: unknown, retryable?: boolean }} [options] - 原因与重试提示。
    */
   constructor(message, code, options = {}) {
     super(message, options.cause === undefined ? undefined : { cause: options.cause });
@@ -195,14 +186,13 @@ export class WebSearchError extends Error {
 }
 
 /**
- * Read one config value, tolerating both a plain value and a schemastery
- * "volatile" reference (which exposes `.get()`), so this plugin behaves the same
- * whether or not a Config schema ever wraps the row.
+ * 读取一个配置值，同时兼容普通值和 schemastery 的「volatile」引用（后者暴露
+ * `.get()`），这样无论该行是否被 Config schema 包装过，本插件的行为都一致。
  *
- * @param {unknown} config - the row config handed to `apply`.
- * @param {string} key - field name.
- * @param {unknown} fallback - value used when the field is absent or null.
- * @returns {unknown} the resolved value.
+ * @param {unknown} config - 传给 `apply` 的行配置。
+ * @param {string} key - 字段名。
+ * @param {unknown} fallback - 字段缺失或为 null 时使用的值。
+ * @returns {unknown} 解析出的值。
  */
 function readOption(config, key, fallback) {
   if (config === null || config === undefined) return fallback;
@@ -224,17 +214,17 @@ function readOption(config, key, fallback) {
   return value;
 }
 
-/** True for a positive integer. */
+/** 为正整数时返回 true。 */
 function isPositiveInteger(value) {
   return Number.isInteger(value) && value > 0;
 }
 
-/** True for a non-negative integer. */
+/** 为非负整数时返回 true。 */
 function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
-/** True when `value` parses as an absolute URL. */
+/** 当 `value` 能解析为绝对 URL 时返回 true。 */
 function isParsableUrl(value) {
   if (typeof value !== 'string' || value.length === 0) return false;
   if (typeof URL.canParse === 'function') return URL.canParse(value);
@@ -246,14 +236,14 @@ function isParsableUrl(value) {
   }
 }
 
-/** Read a non-empty environment variable, or undefined. */
+/** 读取一个非空环境变量，取不到则返回 undefined。 */
 function envValue(key) {
   if (typeof key !== 'string' || key.length === 0) return undefined;
   const value = process.env[key];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** Build the `url → cited_text` map used to attach snippets. */
+/** 构建用于挂接摘要的 `url → cited_text` 映射。 */
 export function citationSnippets(blocks) {
   const map = new Map();
   for (const block of blocks) {
@@ -268,7 +258,7 @@ export function citationSnippets(blocks) {
   return map;
 }
 
-/** First non-empty string among the candidates. */
+/** 候选值中第一个非空字符串。 */
 function firstNonEmptyString(...candidates) {
   for (const candidate of candidates) {
     if (typeof candidate === 'string' && candidate.length > 0) return candidate;
@@ -276,7 +266,7 @@ function firstNonEmptyString(...candidates) {
   return undefined;
 }
 
-/** Concatenate every `text` block, or undefined when there is no prose. */
+/** 拼接所有 `text` 块；没有散文式内容时返回 undefined。 */
 export function answerText(blocks) {
   const parts = [];
   for (const block of blocks) {
@@ -288,15 +278,15 @@ export function answerText(blocks) {
 }
 
 /**
- * Build the Anthropic Messages body for one search.
+ * 为一次搜索构建 Anthropic Messages 请求体。
  *
- * `content` is sent as a block array rather than a bare string: both shapes work
- * for `deepseek-v4-flash`, but the array form is the one DeepSeek's Anthropic
- * surface documents and it avoids the `Empty input messages` class of 400.
+ * `content` 以块数组而不是裸字符串发送：两种形式对 `deepseek-v4-flash` 都能用，
+ * 但数组形式是 DeepSeek 的 Anthropic 接口所文档化的写法，也能避开
+ * `Empty input messages` 那一类 400。
  *
- * @param {{ model: string, maxTokens: number, maxUses: number, queryTemplate: string }} options - resolved options.
- * @param {string} query - the caller's query.
- * @returns {object} the JSON request body.
+ * @param {{ model: string, maxTokens: number, maxUses: number, queryTemplate: string }} options - 已解析的选项。
+ * @param {string} query - 调用方的查询词。
+ * @returns {object} JSON 请求体。
  */
 export function buildSearchBody(options, query) {
   const prompt = options.queryTemplate.includes('{query}')
@@ -322,25 +312,25 @@ export function buildSearchBody(options, query) {
 }
 
 /**
- * Map a DeepSeek/Anthropic Messages response to the seam's search result.
+ * 把 DeepSeek/Anthropic 的 Messages 响应映射为 seam 的搜索结果。
  *
- * Walks `web_search_tool_result` blocks for `web_search_result` items, joins each
- * to its citation excerpt when one exists, and dedupes by URL (a `max_uses > 1`
- * request can surface the same URL across searches). The web seam owns the final
- * `maxResults` truncation, so `truncated` is always `false` here.
+ * 遍历 `web_search_tool_result` 块以取出 `web_search_result` 项，在存在引用摘录时
+ * 为每一项接上对应摘录，并按 URL 去重（`max_uses > 1` 的请求可能在不同搜索中命中
+ * 同一个 URL）。最终的 `maxResults` 截断由 web seam 负责，所以这里的 `truncated`
+ * 恒为 `false`。
  *
- * @param {object} response - the parsed Messages response body.
- * @param {{ includeAnswer?: boolean }} [options] - whether to surface model prose as `content`.
- * @returns {{ content?: string, sources: object[], truncated: boolean }} the normalized result.
- * @throws {WebSearchError} `WEB_PROVIDER_ERROR` when the response carries no result block.
+ * @param {object} response - 解析后的 Messages 响应体。
+ * @param {{ includeAnswer?: boolean }} [options] - 是否把模型的散文式内容作为 `content` 暴露出去。
+ * @returns {{ content?: string, sources: object[], truncated: boolean }} 归一化后的结果。
+ * @throws {WebSearchError} 响应中不含结果块时抛 `WEB_PROVIDER_ERROR`。
  */
 export function mapAnthropicResponse(response, options = {}) {
   const blocks = Array.isArray(response?.content) ? response.content : [];
   const resultBlocks = blocks.filter((block) => block?.type === 'web_search_tool_result');
   if (resultBlocks.length === 0) {
     throw new WebSearchError(
-      'OpenCode returned no web_search_tool_result blocks; the request may not have triggered native web search. ' +
-        'Check that the configured model supports the web_search_20250305 server tool.',
+      'OpenCode 没有返回任何 web_search_tool_result 块；该请求可能没有触发原生网页搜索。' +
+        '请检查所配置的模型是否支持 web_search_20250305 服务端工具。',
       'WEB_PROVIDER_ERROR',
     );
   }
@@ -380,29 +370,29 @@ export function mapAnthropicResponse(response, options = {}) {
   };
 }
 
-/** Throw the provider's stable cancellation error when the caller already aborted. */
+/** 调用方已经中止时，抛出本提供方的稳定取消错误。 */
 function throwIfAborted(signal) {
   if (signal?.aborted === true) {
-    throw new WebSearchError('OpenCode web search aborted', 'WEB_ABORTED', {
+    throw new WebSearchError('OpenCode 网页搜索已中止', 'WEB_ABORTED', {
       cause: signal.reason,
     });
   }
 }
 
 /**
- * Race one attempt's timeout against the caller's cancellation without depending
- * on `AbortSignal.any` (so the plugin also runs on older hosts).
+ * 让单次尝试的超时与调用方的取消相互竞争，同时不依赖 `AbortSignal.any`
+ * （这样插件在较老的宿主上也能运行）。
  *
- * @param {AbortSignal | undefined} callerSignal - the caller's signal.
- * @param {number} timeoutMs - per-attempt budget.
- * @returns {{ signal: AbortSignal, didTimeout: () => boolean, cleanup: () => void }} the attempt signal.
+ * @param {AbortSignal | undefined} callerSignal - 调用方的信号。
+ * @param {number} timeoutMs - 每次尝试的时间预算。
+ * @returns {{ signal: AbortSignal, didTimeout: () => boolean, cleanup: () => void }} 本次尝试的信号。
  */
 function createAttemptSignal(callerSignal, timeoutMs) {
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    controller.abort(new Error(`OpenCode web search timed out after ${timeoutMs}ms`));
+    controller.abort(new Error(`OpenCode 网页搜索在 ${timeoutMs}ms 后超时`));
   }, timeoutMs);
   if (typeof timer.unref === 'function') timer.unref();
 
@@ -422,11 +412,11 @@ function createAttemptSignal(callerSignal, timeoutMs) {
   };
 }
 
-/** Abortable delay between attempts. */
+/** 两次尝试之间可被中止的延时。 */
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted === true) {
-      reject(new WebSearchError('OpenCode web search aborted', 'WEB_ABORTED', { cause: signal.reason }));
+      reject(new WebSearchError('OpenCode 网页搜索已中止', 'WEB_ABORTED', { cause: signal.reason }));
       return;
     }
     const timer = setTimeout(() => {
@@ -435,13 +425,13 @@ function delay(ms, signal) {
     }, ms);
     function onAbort() {
       clearTimeout(timer);
-      reject(new WebSearchError('OpenCode web search aborted', 'WEB_ABORTED', { cause: signal?.reason }));
+      reject(new WebSearchError('OpenCode 网页搜索已中止', 'WEB_ABORTED', { cause: signal?.reason }));
     }
     signal?.addEventListener?.('abort', onAbort, { once: true });
   });
 }
 
-/** Extract the most useful message from an Anthropic-style error body. */
+/** 从 Anthropic 风格的错误体里提取最有用的那条信息。 */
 function errorDetail(parsed) {
   const error = parsed?.error;
   if (typeof error === 'string' && error.length > 0) return error;
@@ -450,7 +440,7 @@ function errorDetail(parsed) {
   return undefined;
 }
 
-/** True when a non-2xx body names the missing-session condition. */
+/** 当非 2xx 响应体指出「缺少会话」这一情况时返回 true。 */
 function isMissingSession(parsed) {
   const type = parsed?.error?.type;
   if (typeof type === 'string' && /MissingSessionID/i.test(type)) return true;
@@ -458,37 +448,34 @@ function isMissingSession(parsed) {
 }
 
 /**
- * The OpenCode search provider.
+ * OpenCode 搜索提供方。
  *
- * Options are re-resolved per operation (a thunk rather than a snapshot) so a
- * config change reaches the next search without re-registering the provider,
- * which would make the seam's selection observable as a flicker.
+ * 选项按操作重新解析（用 thunk 而不是快照），这样配置变更无需重新注册提供方就能
+ * 作用到下一次搜索 —— 重新注册会让 seam 的选择过程表现为一次闪烁。
  */
 export class OpenCodeSearchProvider {
   /**
-   * @param {object} ctx - the plugin context.
-   * @param {() => object} resolveOptions - resolves the options for the next operation.
+   * @param {object} ctx - 插件上下文。
+   * @param {() => object} resolveOptions - 解析下一次操作所用的选项。
    */
   constructor(ctx, resolveOptions) {
     this.ctx = ctx;
     this.resolveOptions = resolveOptions;
     this.id = PROVIDER_ID;
-    /** Reused across searches when `sessionMode` is `stable`. */
+    /** 当 `sessionMode` 为 `stable` 时，在多次搜索间复用。 */
     this.stableSessionId = randomUUID();
   }
 
   /**
-   * Cheap local availability check — never makes a network call. A mounted
-   * credentials service is treated optimistically, exactly like the shipped
-   * provider: the search itself fails with `WEB_PROVIDER_CREDENTIAL_MISSING`
-   * when the reference turns out to be unset.
+   * 轻量的本地可用性检查 —— 绝不发起网络调用。已挂载的凭据服务会被乐观对待，
+   * 与内置提供方完全一致：如果引用最终未设置，搜索本身会以
+   * `WEB_PROVIDER_CREDENTIAL_MISSING` 失败。
    *
-   * @returns {boolean} whether this provider can plausibly run a search.
+   * @returns {boolean} 本提供方是否有理由执行搜索。
    */
   available() {
     const options = this.resolveOptions();
-    // "Do not override the official configuration" makes this provider a
-    // pass-through: it is only usable while the official one is.
+    // 「不覆盖官方配置」会让本提供方变成直通：只有在官方提供方可用时才可用。
     if (!options.overrideOfficial) return officialProvider(this.ctx)?.available() === true;
     if (!isParsableUrl(options.baseURL)) return false;
     if (!isPositiveInteger(options.maxTokens)) return false;
@@ -502,22 +489,21 @@ export class OpenCodeSearchProvider {
   }
 
   /**
-   * Resolve one operation's API key. Never cached, so a rotated key reaches the
-   * next search without a restart.
+   * 解析某次操作要用的 API 密钥。从不缓存，因此轮换后的密钥无需重启就能作用到
+   * 下一次搜索。
    *
-   * @param {object} options - the operation's option snapshot.
-   * @param {AbortSignal | undefined} signal - the caller's signal.
-   * @returns {Promise<string>} the API key.
-   * @throws {WebSearchError} `WEB_PROVIDER_CREDENTIAL_MISSING` when none resolves.
+   * @param {object} options - 该次操作的选项快照。
+   * @param {AbortSignal | undefined} signal - 调用方的信号。
+   * @returns {Promise<string>} API 密钥。
+   * @throws {WebSearchError} 解析不到任何密钥时抛 `WEB_PROVIDER_CREDENTIAL_MISSING`。
    */
   async resolveApiKey(options, signal) {
     throwIfAborted(signal);
     if (typeof options.apiKey === 'string' && options.apiKey.length > 0) return options.apiKey;
 
-    // Both references are tried against the credential store, not just the
-    // primary one. The plugin's canonical reference is `OPENCODE_API_KEY`, but a
-    // key stored under the pre-rename name must keep working — otherwise
-    // renaming the plugin silently locks every existing install out of search.
+    // 两个引用都会拿去凭据库尝试，而不只是首选的那个。本插件的规范引用是
+    // `OPENCODE_API_KEY`，但存放在改名之前那个名称下的密钥必须继续可用 —— 否则
+    // 重命名插件就会悄无声息地把所有既有安装挡在搜索之外。
     const refs = credentialRefs(options);
     const credentials = this.ctx.get('credentials');
     if (credentials !== undefined) {
@@ -526,7 +512,7 @@ export class OpenCodeSearchProvider {
           const resolved = await credentials.resolve(ref);
           if (typeof resolved?.value === 'string' && resolved.value.length > 0) return resolved.value;
         } catch {
-          // Fall through to the next reference, then the process environment.
+          // 继续尝试下一个引用，最后再回退到进程环境。
         }
         throwIfAborted(signal);
       }
@@ -538,31 +524,30 @@ export class OpenCodeSearchProvider {
     }
 
     throw new WebSearchError(
-      `OpenCode web search has no API key: store it in the DSH credential store under ` +
-        `${refs.map((ref) => `"${ref}"`).join(' or ')}, set the matching environment variable, ` +
-        `or set a literal "apiKey" in the web-search-opencode-ds config.`,
+      `OpenCode 网页搜索没有可用的 API 密钥：请把它存入 DSH 凭据库的 ` +
+        `${refs.map((ref) => `"${ref}"`).join(' 或 ')} 之下，或设置对应的环境变量，` +
+        `或在 web-search-opencode-ds 配置里直接填写 "apiKey"。`,
       'WEB_PROVIDER_CREDENTIAL_MISSING',
     );
   }
 
   /**
-   * Run one search through OpenCode.
+   * 通过 OpenCode 执行一次搜索。
    *
-   * @param {{ query: string, maxResults?: number }} request - the seam's request.
-   * @param {AbortSignal} [signal] - optional cancellation signal.
-   * @returns {Promise<{ content?: string, sources: object[], truncated: boolean }>} normalized results.
+   * @param {{ query: string, maxResults?: number }} request - seam 的请求。
+   * @param {AbortSignal} [signal] - 可选的取消信号。
+   * @returns {Promise<{ content?: string, sources: object[], truncated: boolean }>} 归一化后的结果。
    */
   async search(request, signal) {
     const options = this.resolveOptions();
-    // Pass-through mode: hand the request to the shipped provider so its
-    // endpoint, key, model and search budget all apply unchanged.
+    // 直通模式：把请求交给内置提供方，让它的端点、密钥、模型和搜索预算原样生效。
     if (!options.overrideOfficial) {
       const provider = officialProvider(this.ctx);
       if (provider === undefined) {
         throw new WebSearchError(
-          `"${SETTINGS_NAMESPACE}" is set to not override the official configuration, but the ` +
-            `"${OFFICIAL_PROVIDER_ID}" provider is not registered, so there is nothing to defer to. ` +
-            `Re-enable "Override official configuration", or mount @deepseek-ai/dsh-web-search-deepseek.`,
+          `"${SETTINGS_NAMESPACE}" 被设置为不覆盖官方配置，但 "${OFFICIAL_PROVIDER_ID}" ` +
+            `提供方未注册，因此没有可委托的对象。请重新开启「覆盖官方配置」，` +
+            `或挂载 @deepseek-ai/dsh-web-search-deepseek。`,
           'WEB_PROVIDER_ERROR',
         );
       }
@@ -591,14 +576,14 @@ export class OpenCodeSearchProvider {
   }
 
   /**
-   * One dispatch attempt.
+   * 一次派发尝试。
    *
-   * @param {string} endpoint - the resolved Messages endpoint.
-   * @param {string} apiKey - the resolved key.
-   * @param {object} options - the operation's option snapshot.
-   * @param {object} body - the request body.
-   * @param {AbortSignal | undefined} callerSignal - the caller's signal.
-   * @returns {Promise<object>} the normalized search result.
+   * @param {string} endpoint - 解析出的 Messages 端点。
+   * @param {string} apiKey - 解析出的密钥。
+   * @param {object} options - 该次操作的选项快照。
+   * @param {object} body - 请求体。
+   * @param {AbortSignal | undefined} callerSignal - 调用方的信号。
+   * @returns {Promise<object>} 归一化后的搜索结果。
    */
   async attempt(endpoint, apiKey, options, body, callerSignal) {
     const sessionId =
@@ -615,8 +600,8 @@ export class OpenCodeSearchProvider {
         method: 'POST',
         redirect: 'error',
         headers: {
-          // Verified: `x-api-key` is what authenticates on OpenCode;
-          // `Authorization: Bearer` alone answers 401 `Missing API key.`
+          // 已实测：在 OpenCode 上真正完成鉴权的是 `x-api-key`；
+          // 只发 `Authorization: Bearer` 会得到 401 `Missing API key.`
           'x-api-key': apiKey,
           authorization: `Bearer ${apiKey}`,
           'content-type': 'application/json',
@@ -631,19 +616,19 @@ export class OpenCodeSearchProvider {
       });
     } catch (error) {
       if (callerSignal?.aborted === true) {
-        throw new WebSearchError('OpenCode web search aborted', 'WEB_ABORTED', {
+        throw new WebSearchError('OpenCode 网页搜索已中止', 'WEB_ABORTED', {
           cause: callerSignal.reason,
         });
       }
       if (attemptSignal.didTimeout()) {
         throw new WebSearchError(
-          `OpenCode web search timed out after ${options.timeoutMs}ms at ${JSON.stringify(endpoint)}.`,
+          `OpenCode 网页搜索在 ${options.timeoutMs}ms 后超时（端点 ${JSON.stringify(endpoint)}）。`,
           'WEB_PROVIDER_ERROR',
           { cause: error, retryable: true },
         );
       }
       throw new WebSearchError(
-        `OpenCode web search request failed: ${String(error)}\n\nThe request used endpoint ${JSON.stringify(endpoint)}.`,
+        `OpenCode 网页搜索请求失败：${String(error)}\n\n该请求使用的端点为 ${JSON.stringify(endpoint)}。`,
         'WEB_PROVIDER_ERROR',
         { cause: error, retryable: true },
       );
@@ -664,32 +649,31 @@ export class OpenCodeSearchProvider {
 
       if (status === 400 && isMissingSession(parsed)) {
         throw new WebSearchError(
-          `OpenCode rejected the search (HTTP 400) because the request carried no usable ` +
-            `x-opencode-session header${suffix}. This provider generates one per search; seeing this ` +
-            `means the header was stripped in transit.`,
+          `OpenCode 拒绝了本次搜索（HTTP 400），因为该请求没有携带可用的 ` +
+            `x-opencode-session 请求头${suffix}。本提供方每次搜索都会生成一个；` +
+            `出现这种情况说明该请求头在传输途中被剥离了。`,
           'WEB_PROVIDER_ERROR',
           { retryable: true },
         );
       }
       if (status === 401 || status === 403) {
         throw new WebSearchError(
-          `OpenCode rejected the credential (HTTP ${status})${suffix}. Check that ${options.apiKeyEnv} ` +
-            `holds a valid OpenCode key that is entitled to the ` +
-            `${options.goMode ? 'OpenCode Go subscription' : 'metered OpenCode Zen API'} ` +
-            `currently selected by goMode.`,
+          `OpenCode 拒绝了该凭据（HTTP ${status}）${suffix}。请检查 ${options.apiKeyEnv} ` +
+            `中保存的是有效的 OpenCode 密钥，且该密钥有权使用当前由 ` +
+            `goMode 选定的 ${options.goMode ? 'OpenCode Go 套餐' : '按量计费的 OpenCode Zen API'}。`,
           'WEB_PROVIDER_CREDENTIAL_MISSING',
         );
       }
       if (status === 402) {
         throw new WebSearchError(
-          `OpenCode refused the search for lack of funds (HTTP 402)${suffix}\n\n` +
-            `goMode is off, so this request went to the metered endpoint ${JSON.stringify(endpoint)}. ` +
-            `Add funds to the account, or switch goMode back on to bill the flat-rate Go plan instead.`,
+          `OpenCode 因账户余额不足拒绝了本次搜索（HTTP 402）${suffix}\n\n` +
+            `goMode 处于关闭状态，因此该请求发往了按量计费端点 ${JSON.stringify(endpoint)}。` +
+            `请为账户充值，或重新开启 goMode 改为计入包月的 Go 套餐。`,
           'WEB_PROVIDER_ERROR',
         );
       }
       throw new WebSearchError(
-        `OpenCode API error (HTTP ${status})${suffix}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}.`,
+        `OpenCode API 错误（HTTP ${status}）${suffix}\n\n该网页搜索请求使用的端点为 ${JSON.stringify(endpoint)}。`,
         'WEB_PROVIDER_ERROR',
         { retryable: RETRYABLE_STATUS.has(status) },
       );
@@ -700,7 +684,7 @@ export class OpenCodeSearchProvider {
       payload = await response.json();
     } catch (error) {
       throw new WebSearchError(
-        `OpenCode returned an unprocessable response body: ${String(error)}`,
+        `OpenCode 返回了无法解析的响应体：${String(error)}`,
         'WEB_PROVIDER_ERROR',
         { cause: error, retryable: true },
       );
@@ -711,12 +695,12 @@ export class OpenCodeSearchProvider {
 }
 
 /**
- * Project the live config into the options one search runs with. Every value is
- * fully defaulted here so the provider never reads a raw config field.
+ * 把实时配置投影为一次搜索实际使用的选项。每个值都在这里补齐默认值，因此提供方
+ * 从不读取原始的配置字段。
  *
- * @param {object} ctx - the plugin context.
- * @param {unknown} config - the row config.
- * @returns {object} the resolved options.
+ * @param {object} ctx - 插件上下文。
+ * @param {unknown} config - 行配置。
+ * @returns {object} 解析出的选项。
  */
 export function resolveOptions(ctx, config) {
   const goMode = readOption(config, 'goMode', DEFAULT_GO_MODE) !== false;
@@ -724,7 +708,7 @@ export function resolveOptions(ctx, config) {
   return {
     apiKey: readOption(config, 'apiKey', undefined),
     apiKeyEnv: readOption(config, 'apiKeyEnv', DEFAULT_API_KEY_ENV),
-    // An explicit baseURL always wins; otherwise the mode picks the endpoint.
+    // 显式指定的 baseURL 始终优先；否则由模式决定端点。
     baseURL:
       typeof declaredBaseUrl === 'string' && declaredBaseUrl.length > 0
         ? declaredBaseUrl
@@ -747,13 +731,13 @@ export function resolveOptions(ctx, config) {
 }
 
 /**
- * The credential references to try, in order, for one operation.
+ * 某次操作按顺序要尝试的凭据引用。
  *
- * The configured reference comes first; the other canonical spelling is always
- * appended so a key stored under either name resolves. Duplicates are dropped.
+ * 配置的引用排在最前；另一种规范写法总会被追加，这样存放在任一名称下的密钥都能
+ * 解析到。重复项会被去掉。
  *
- * @param {object} options - the operation's option snapshot.
- * @returns {string[]} the references to try, most specific first.
+ * @param {object} options - 该次操作的选项快照。
+ * @returns {string[]} 要尝试的引用，最具体的排在最前。
  */
 export function credentialRefs(options) {
   const configured = typeof options.apiKeyEnv === 'string' && options.apiKeyEnv.length > 0
@@ -763,15 +747,14 @@ export function credentialRefs(options) {
 }
 
 /**
- * Look up the shipped DeepSeek provider in the seam's own registry.
+ * 在 seam 自己的注册表里查找内置的 DeepSeek 提供方。
  *
- * `WebRuntime.searchProviders` is a plain public `Map`, and the seam resolves
- * the configured id at call time, so delegating here is a live decision: the
- * official provider keeps using its own section of config, which is exactly what
- * "do not override the official configuration" has to mean.
+ * `WebRuntime.searchProviders` 就是一个普通的公开 `Map`，而 seam 在调用时才解析
+ * 配置的 id，所以在这里委托是一个实时决定：官方提供方会继续使用它自己那段配置，
+ * 这正是「不覆盖官方配置」必须意味着的事情。
  *
- * @param {object} ctx - the plugin context.
- * @returns {{ search: Function, available: Function } | undefined} the official provider, if mounted.
+ * @param {object} ctx - 插件上下文。
+ * @returns {{ search: Function, available: Function } | undefined} 官方提供方（若已挂载）。
  */
 function officialProvider(ctx) {
   const web = ctx.get?.('web') ?? ctx.web;
@@ -782,10 +765,10 @@ function officialProvider(ctx) {
 }
 
 /**
- * Register the OpenCode search provider with `ctx.web`.
+ * 向 `ctx.web` 注册 OpenCode 搜索提供方。
  *
- * @param {object} ctx - the plugin context, carrying the `web` seam.
- * @param {unknown} config - the row config.
+ * @param {object} ctx - 插件上下文，携带 `web` seam。
+ * @param {unknown} config - 行配置。
  */
 export function apply(ctx, config) {
   const provider = new OpenCodeSearchProvider(ctx, () => {
@@ -798,24 +781,22 @@ export function apply(ctx, config) {
   });
   ctx.web.registerSearchProvider(provider);
 
-  // This plugin ships its own browser form (`client.js`), so it opts out of the
-  // schema-generated page. `auto: false` only suppresses that generation — the
-  // settings service still serves reads and writes for the namespace. Registering
-  // inside `ctx.inject(['settings'], ...)` keeps the plugin usable in a profile
-  // that has no settings service at all, and ties the policy to this plugin's
-  // fiber so a late-loaded Settings service still adopts it.
+  // 本插件自带浏览器表单（`client.js`），因此不使用 schema 自动生成的页面。
+  // `auto: false` 只是抑制那次生成 —— 设置服务仍会为该命名空间提供读写。把注册放在
+  // `ctx.inject(['settings'], ...)` 里，可以让插件在完全没有设置服务的 profile 中
+  // 依然可用，并把该策略绑定到本插件的 fiber 上，使晚加载的 Settings 服务仍会采纳它。
   ctx.inject?.(['settings'], (settingsCtx) => {
     settingsCtx.effect(
       () => settingsCtx.settings.configure({ auto: false }, ctx.fiber),
-      'web-search-opencode-ds: settings presentation policy',
+      'web-search-opencode-ds: 设置页呈现策略',
     );
   });
 
   const options = resolveOptions(ctx, config);
   ctx.logger?.debug?.(
-    'web-search-opencode-ds: registered search provider "%s" (%s; mode=%s, overrideOfficial=%s)',
+    'web-search-opencode-ds: 已注册搜索提供方 "%s"（%s；mode=%s, overrideOfficial=%s）',
     PROVIDER_ID,
-    provider.available() ? 'available' : 'unavailable (no credential yet)',
+    provider.available() ? '可用' : '不可用（尚无凭据）',
     options.goMode ? 'go' : 'metered',
     String(options.overrideOfficial),
   );
