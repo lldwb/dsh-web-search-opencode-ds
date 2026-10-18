@@ -4,7 +4,9 @@
  * 官方的服务端网页搜索。`goMode` 决定用哪一份 OpenCode 套餐：包月的 Go 订阅
  * （`/zen/go/v1`，默认值）还是默认的按量计费 API（`/zen/v1`）。
  *
- * ## 针对线上端点实测确认过的事实（2026-10-02）
+ * ## 针对线上端点实测确认过的事实
+ *
+ * ### 2026-10-02（初次验证）
  *
  * | 观察项 | 结果 |
  * |---|---|
@@ -14,6 +16,21 @@
  * | 只发 `x-api-key: <key>` | **HTTP 200** |
  * | `GET /zen/go/v1/models` | 200；`deepseek-v4-flash` 在 id 列表中 |
  * | 候选的会话创建路径（`/sessions`、`/session` 等） | 全部 **404** —— 不存在会话创建端点 |
+ *
+ * ### 2026-10-18（复验）
+ *
+ * | 观察项 | 结果 |
+ * |---|---|
+ * | `GET /zen/go/v1/models` | 200，**37** 个模型（上次 43）；deepseek 只剩 `deepseek-v4.1-flash`、`deepseek-v4-pro` |
+ * | `GET /zen/v1/models` | 200，**85** 个模型；含 `deepseek-v4-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-free`、`deepseek-v4-pro` |
+ * | **`deepseek-v4-flash` 是否还在 Go 套餐里** | **不在了**。Go 已下架该模型，按量计费侧仍保留 |
+ * | 专用检索 API（`/search`、`/fetch`、`/tools/search`、`/tools/fetch`、`/web/search`、`/web/fetch`，两条路由 GET+POST） | 全部 **404** —— OpenCode **没有** DeepSeek 那套专用 Search/Fetch API |
+ * | `v2` 路由家族（`/zen/go/v2/models`、`/zen/v2/models`） | **404** —— 没有版本跃迁 |
+ * | 已存储的 key | **已过期**：`authentication_error: This API key has expired.` |
+ *
+ * **因此 2026-10-18 这一轮无法复验**「`web_search_20250305` 是否仍是当前工具版本」
+ * 以及「Go 套餐是否支持更新版 API」—— 两条都需要有效凭据。这里不臆测结论；
+ * 已知的确定性事实是：OpenCode 只有 Messages 一条检索路径，专用 API 不存在。
  *
  * 由此固化进本实现的结论：
  *
@@ -69,19 +86,25 @@ export const OFFICIAL_PROVIDER_ID = 'deepseek-official';
 export const GO_BASE_URL = 'https://opencode.ai/zen/go/v1';
 
 /**
- * OpenCode Zen 基址：默认的按量计费（用多少付多少）API。已确认它提供的目录形态
- * 与 Go 一致（`/zen/v1/models` 返回 85 个 id，Go 是 43 个），且两者都包含
- * `deepseek-v4-flash`。请求打到这里的费用从账户余额扣除而不是走 Go 套餐，因此在
- * 账户充值之前会返回 HTTP 402「Insufficient account funds」—— 这是配置事实，
- * 不是本插件的 bug。
+ * OpenCode Zen 基址：默认的按量计费（用多少付多少）API。两条路由的模型目录不同：
+ * 2026-10-18 实测 `/zen/v1/models` 有 85 个 id，而 `/zen/go/v1/models` 只有 37 个；
+ * `deepseek-v4-flash` 只在按量计费侧存在，Go 套餐已下架它。请求打到这里的费用从
+ * 账户余额扣除而不是走 Go 套餐，因此在账户充值之前会返回 HTTP 402
+ * 「Insufficient account funds」—— 这是配置事实，不是本插件的 bug。
  */
 export const ZEN_BASE_URL = 'https://opencode.ai/zen/v1';
 
 /** 向后兼容别名：`goMode` 开启时使用的基址。 */
 export const DEFAULT_BASE_URL = GO_BASE_URL;
 
-/** 默认的 Anthropic 格式模型 id（已确认存在于 `/zen/go/v1/models`）。 */
-export const DEFAULT_MODEL = 'deepseek-v4-flash';
+/**
+ * 默认的 Anthropic 格式模型 id。
+ *
+ * 选 `deepseek-v4.1-flash` 而不是旧的 `deepseek-v4-flash`：2026-10-18 实测前者在
+ * **两条路由都存在**，后者已从 Go 套餐下架（只剩按量计费侧）。默认值必须在两种
+ * 模式下都能跑，否则切一下 `goMode` 就会静默失效。
+ */
+export const DEFAULT_MODEL = 'deepseek-v4.1-flash';
 
 /** 默认的 `anthropic-version` 请求头取值。 */
 export const DEFAULT_API_VERSION = '2023-06-01';
@@ -105,7 +128,7 @@ export const DEFAULT_API_KEY_ENV = 'OPENCODE_API_KEY';
 export const FALLBACK_API_KEY_ENV = 'OPENCODE_GO_API_KEY';
 
 /** 每次请求都会发送的归属标识请求头。 */
-export const USER_AGENT = 'dsh-web-search-opencode-ds/0.2.0';
+export const USER_AGENT = 'dsh-web-search-opencode-ds/0.3.0';
 
 /** 提示词模板；`{query}` 会被替换为调用方的查询词。 */
 export const DEFAULT_QUERY_TEMPLATE = 'Perform a web search for the query: {query}';
@@ -280,9 +303,9 @@ export function answerText(blocks) {
 /**
  * 为一次搜索构建 Anthropic Messages 请求体。
  *
- * `content` 以块数组而不是裸字符串发送：两种形式对 `deepseek-v4-flash` 都能用，
- * 但数组形式是 DeepSeek 的 Anthropic 接口所文档化的写法，也能避开
- * `Empty input messages` 那一类 400。
+ * `content` 以块数组而不是裸字符串发送：两种形式对 DeepSeek 的 Anthropic 兼容
+ * 接口都能用，但数组形式是官方文档化的写法，也能避开 `Empty input messages`
+ * 那一类 400。
  *
  * @param {{ model: string, maxTokens: number, maxUses: number, queryTemplate: string }} options - 已解析的选项。
  * @param {string} query - 调用方的查询词。
@@ -660,8 +683,22 @@ export class OpenCodeSearchProvider {
         throw new WebSearchError(
           `OpenCode 拒绝了该凭据（HTTP ${status}）${suffix}。请检查 ${options.apiKeyEnv} ` +
             `中保存的是有效的 OpenCode 密钥，且该密钥有权使用当前由 ` +
-            `goMode 选定的 ${options.goMode ? 'OpenCode Go 套餐' : '按量计费的 OpenCode Zen API'}。`,
+            `goMode 选定的 ${options.goMode ? 'OpenCode Go 套餐' : '按量计费的 OpenCode Zen API'}。` +
+            `注意密钥本身会过期：届时正文是 This API key has expired。`,
           'WEB_PROVIDER_CREDENTIAL_MISSING',
+        );
+      }
+      // 模型换代是真实发生过的故障：Go 套餐曾下架 `deepseek-v4-flash`，让旧默认值
+      // 直接失效。端点对"模型不存在"的回应是 400/404，正文里会提到 model，所以这里
+      // 把它翻译成可直接执行的建议，而不是笼统的 HTTP 错误。
+      if ((status === 400 || status === 404) && /model/iu.test(detail ?? '')) {
+        throw new WebSearchError(
+          `OpenCode 似乎不认这个模型（HTTP ${status}）${suffix}\n\n` +
+            `当前 model 是 ${JSON.stringify(options.model)}，端点是 ${JSON.stringify(endpoint)}。\n` +
+            `两条 OpenCode 路由的模型目录并不相同，而且会变——模型下架曾让默认值失效。` +
+            `请先查 ${JSON.stringify(`${options.baseURL.replace(/\/+$/u, '')}/models`)} 拿到该端点现有的 id，` +
+            `再改「设置 → 插件 → 网页搜索（OpenCode）」里的模型配置。`,
+          'WEB_PROVIDER_ERROR',
         );
       }
       if (status === 402) {

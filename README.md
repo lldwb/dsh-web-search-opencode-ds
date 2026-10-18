@@ -26,7 +26,10 @@
 
 ## 1. 实测验证结论
 
-以下每一条都是**当天对线上端点实打实请求出来的**，不是从文档抄的。
+以下每一条都是**当天对线上端点实打实请求出来的**，不是从文档抄的。分两次：初次验证（2026-10-02）
+与 DSH 升级到 0.2.1-rc.2 之后的复验（2026-10-18）。
+
+### 1.1 初次验证（2026-10-02）
 
 | 观察 | 结果 |
 |---|---|
@@ -39,6 +42,22 @@
 | `POST /zen/v1/messages`（按量计费端点） | **HTTP 402** `Insufficient account funds` —— 路由与鉴权都通，**只是这个账户没有按量余额** |
 | 候选会话创建路径（`/sessions`、`/session`、`/zen/v1/sessions`…） | **全部 404** —— 根本没有「先建会话」这一步 |
 
+### 1.2 复验（2026-10-18，DSH 0.2.1-rc.2）
+
+| 观察 | 结果 |
+|---|---|
+| `GET /zen/go/v1/models` | 200，**37** 个模型（上次 43）；deepseek 只剩 `deepseek-v4.1-flash`、`deepseek-v4-pro` |
+| `GET /zen/v1/models` | 200，**85** 个模型；含 `deepseek-v4-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-free`、`deepseek-v4-pro` |
+| **`deepseek-v4-flash` 还在 Go 套餐里吗** | **不在了**。Go 已下架，按量计费侧仍保留 —— 所以本插件的默认值改成了 `deepseek-v4.1-flash` |
+| 专用检索 API：`/search`、`/fetch`、`/tools/search`、`/tools/fetch`、`/web/search`、`/web/fetch`（两条路由 × GET/POST） | **全部 404** —— OpenCode **没有** DeepSeek 那套专用 Search/Fetch API |
+| `v2` 路由家族（`/zen/go/v2/models`、`/zen/v2/models`） | **404** —— 没有版本跃迁 |
+| 已存储的 API key | **已过期**：`authentication_error: This API key has expired.` |
+
+> ⚠️ **这一轮被凭据阻塞**：「`web_search_20250305` 是否仍是当前工具版本」与「Go 套餐是否支持
+> 更新版 API」都需要**有效密钥**才能测，而本机密钥已过期。这里不臆测结论。确定性的事实只有一条：
+> **OpenCode 只有 Messages 一条检索路径，专用 Search/Fetch API 不存在**（404 与密钥有效性无关，
+> 端点存在会返回 401/405 而不是 404）。
+
 ### 由此得到的硬结论
 
 1. **`x-opencode-session` 是强制头，而且由客户端自己生成。** 默认每次搜索新生成一个 UUID v4
@@ -46,11 +65,14 @@
    会话 id，「先创建会话」这条分支不存在，不需要实现。
 2. **真正鉴权的是 `x-api-key`。** 最初的需求写的是只用 `Authorization: Bearer`，但那样会被 401 拒绝。
    本插件**两个头都发**，这样网关两种行为都活得下来。
-3. **两个端点共用一套 wire format。** `goMode` 只改 base URL，请求体、头、模型全都不变；
-   `deepseek-v4-flash` 在两个目录里都存在，所以切模式不需要换模型。
+3. **两个端点共用一套 wire format。** `goMode` 只改 base URL，请求体、头都不变 ——
+   但**模型可用性不同**：2026-10-18 起 Go 目录已不含 `deepseek-v4-flash`。默认值取
+   `deepseek-v4.1-flash`，因为它在两条路由都存在。
 4. **按量计费端点要账户有余额。** 本机账户只有 Go 套餐，所以 `/zen/v1` 稳定返回 402。
    这是**账户事实，不是插件 bug** —— 插件会把 402 单独翻译成「余额不足，要么充值、要么把
    `goMode` 打回开启」的提示，而不是笼统报一个 HTTP 错误。
+5. **密钥会过期。** 过期时正文是 `This API key has expired.`，去 OpenCode Console 换一把即可；
+   插件会在 401 文案里点名这一点。
 
 ### 一个必须知道的限制：响应里没有 snippet
 
@@ -151,12 +173,17 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | 控件 | 字段 | 说明 |
 |---|---|---|
 | API Key | `apiKey` | 只写不读。写进凭据库；留空表示不改动现有密钥 |
+| 模型 | `model` | 决定实际用哪个模型；留空用默认 `deepseek-v4.1-flash` |
 | 接口地址 | `baseURL` | 留空则**按下面的模式自动决定** |
 | 单次请求最多搜索次数 | `maxUses` | 一次请求在必须作答前最多搜几次 |
 | **覆盖官方网页搜索配置** | `overrideOfficial` | 见 §4.1 |
 | **使用 OpenCode Go 套餐** | `goMode` | 见 §4.2 |
 
 页面只在 Host 真的提供了这个命名空间时才挂载，所以没装插件的部署上**看不到任何痕迹**。
+
+> 为什么有「模型」这一格：OpenCode 的模型目录**会换代**。2026-10-18 实测 Go 套餐已下架
+> `deepseek-v4-flash`，旧默认值直接失效。把模型放进 UI，换代时你自己就能改，不必去编辑
+> `cordis.patch.yml`。
 
 ### 4.1 开关一：是否覆盖官方配置（`overrideOfficial`）
 
@@ -170,10 +197,17 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 「关」的意义是：**官方那套配置（接口地址 `https://api.deepseek.com/anthropic`、`DEEPSEEK_API_KEY`、
 它自己的搜索预算）继续说了算**，本插件完全不插手。
 
-实现方式不是去改 `web.searchProvider` —— 那个字段**不是 `.volatile()`，进程启动时就固化了，
-运行时改不了**；而且没有固定值时两个 provider 都可用会直接撞上 `WEB_PROVIDER_AMBIGUOUS`。
-真正的做法是：本插件作为被选中的 provider，在 `search()` 里把请求委托给
-`ctx.web.searchProviders.get('deepseek-official')`。这是一个**活的决定**，所以开关立刻生效。
+实现方式是在 `search()` 里把请求**委托**给 `ctx.web.searchProviders.get('deepseek-official')`，
+而不是去改 `web.searchProvider`。
+
+> **关于 `web.searchProvider` 的一个重要更新。** 在 DSH 0.2.0 里它是普通 `z.string()`，启动时读一次
+> 就固化，运行时改不动 —— 这是当初选择「委托」的原因之一。**DSH 0.2.1 起它变成了
+> `z.string().volatile()`，并且每次调用时用 `this.config.searchProvider.get()` 重新读取**，
+> 也就是说现在**可以直接热改**了。
+>
+> 即便如此，这里仍然保留委托：委托**不改用户配置**、不需要写 `web` 行、也不会在切换时留下
+> 一个指向本插件 id 的持久值。代价是同一个开关有两种实现路径，所以 §12 写了它们与官方设置页开关的
+> 交互。
 
 如果 `deepseek-official` 没有挂载，`search()` 会明确报错说明「没有可转交的对象」，而不是静默失败。
 
@@ -200,7 +234,7 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | `apiKey` | — | ✅（secret） | 字面量密钥，优先级最高，不会被表单持久化 |
 | `apiKeyEnv` | `OPENCODE_API_KEY` | ✅（credential-ref） | 凭据引用名 |
 | `baseURL` | 空 | ✅ | 空 = 按 `goMode` 决定 |
-| `model` | `deepseek-v4-flash` | ✅ | Anthropic 格式模型名 |
+| `model` | `deepseek-v4.1-flash` | ✅ | Anthropic 格式模型名；两条路由都有 |
 | `apiVersion` | `2023-06-01` | ✅ | `anthropic-version` 头 |
 | `maxTokens` | `4096` | ✅ | 生成上限 |
 | `maxUses` | `5` | ✅ | 服务端搜索次数上限 |
@@ -231,12 +265,17 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 - 没配 id，多个可用 → `WEB_PROVIDER_AMBIGUOUS`
 - 没配 id，没有可用 → `WEB_PROVIDER_UNAVAILABLE`
 
-本插件的 bundle patch 固定了 `web.searchProvider: opencode-ds`，所以**它一定是被选中的那个**；
+本插件的 bundle patch 把 `web.searchProvider` 初始化为 `opencode-ds`，所以**开箱即用就是它**；
 「用不用官方配置」再交给 `overrideOfficial` 决定。
 
-> ⚠️ **id 定向 patch 会整体替换该行的 `config`，不做深合并。** 随附的 `web` 行目前没有 config，
-> 所以只写 `searchProvider` 不会丢东西。但如果将来有更高优先级的层（比如 profile 自己的
-> `cordis.patch.yml`）给 `web` 行加了 `fetchProvider`，那一层必须**同时重写两个字段**。
+> 注意：DSH 0.2.1 起 `searchProvider` 是 `.volatile()`，**运行时可以改**。所以这个固定值只是
+> **初始值**，不是不可动摇的恒等式 —— 用户（或官方网页搜索页的开关）随时可能把它改掉。
+> 见 §12.1。
+
+> ⚠️ **id 定向 patch 会整体替换该行的 `config`，不做深合并。** 随附的 `web` 行目前只声明了
+> `searchProvider` / `fetchProvider` 两个键，所以只写 `searchProvider` 不会丢东西。但如果更高
+> 优先级的层（比如 profile 自己的 `cordis.patch.yml`）给 `web` 行加了 `fetchProvider`，
+> 那一层必须**同时重写两个字段**。
 
 层序：所有 bundle patch → profile 自己的 `cordis.patch.yml` → `--patch` 覆盖。
 所以 profile 里若也写了 `web` 行，会覆盖本 bundle 的固定值。
@@ -332,8 +371,11 @@ DSH 的设置服务只把**活跃 profile 条目上的 volatile 字段**投影�
 而且策略绑在插件自己的 fiber 上，Settings 服务迟到或换实例也会采用。
 
 **为什么「覆盖官方配置」用委托而不是改配置。**
-`web.searchProvider` 不是 volatile，构造时就固化，运行时改不动；改成别的 id 还会在两个 provider
-都可用时撞上 `WEB_PROVIDER_AMBIGUOUS`。委托是唯一既**立即生效**又**不动别人配置**的做法。
+最初（DSH 0.2.0）`web.searchProvider` 不是 volatile、构造时固化、运行时改不动，改成别的 id 还会在
+两个 provider 都可用时撞上 `WEB_PROVIDER_AMBIGUOUS`，所以委托是唯一可行解。**DSH 0.2.1 起它变成
+了 volatile（每次调用重新读取），改配置这条路已可行**，但委托仍然更好：它不动用户的 `web` 行、
+切换后不留下一个指向本插件 id 的持久值，而且「谁在服务」这件事始终由本插件自己的开关决定。
+代价是要在 §12.1 里把两条路径的交互讲清楚。
 
 **为什么结果不二次截断。**
 `maxResults` 的裁剪归 `ctx.web` 这一层管（`capSources`），所以插件的 `truncated` 恒为 `false`，
@@ -353,16 +395,47 @@ DSH 的设置服务只把**活跃 profile 条目上的 volatile 字段**投影�
 
 ## 12. 已知限制
 
+### 12.1 与官方「网页搜索」设置页的交互（DSH 0.2.1 起）
+
+DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使用 Search API」开关**，而这个开关
+**直接写 `web` 行的 `searchProvider` / `fetchProvider`**：
+
+| 开关位置 | 写入的 `searchProvider` | 写入的 `fetchProvider` |
+|---|---|---|
+| 关（Messages 路径） | `deepseek-official` | `http` |
+| 开（Search API 路径） | `deepseek-search-api` | `deepseek-fetch-api` |
+
+这带来两个后果，务必知道：
+
+1. **本插件的 pin 会被这个开关覆盖。** 开关的判定是
+   `web.searchProvider === "deepseek-search-api"`。本插件把该值设为 `opencode-ds`，所以官方页面
+   会把它显示成「关」；你在那个页面上拨动一次开关，`searchProvider` 就会被改成 `deepseek-*`，
+   **本插件随即不再被选中**（搜索会改走官方后端，而不是报错）。
+   - 想切回本插件：把 `web.searchProvider` 改回 `opencode-ds`（设置 → 插件里编辑，或写
+     profile 的 `cordis.patch.yml）。
+   - 只想临时用官方配置、又不放弃本插件：用本插件的 **`overrideOfficial` 关掉**（§4.1），
+     它会把请求委托给 `deepseek-official`，且不改 `web` 行。
+2. **「使用 Search API」这个开关对本插件无效。** 它选的是 DSH 新加的
+   `dsh-web-deepseek-api` 后端 —— 那是 **DeepSeek 官方**的专用 Search/Fetch API
+   （`https://api.deepseek.com/v1/tools` + `/search`、`/fetch`，不走完整模型轮次）。
+   **OpenCode 没有等价的专用 API**：§1.2 里所有候选路径实测都是 404。所以本插件只能用
+   Messages + `web_search_20250305` 这一条路。
+
+### 12.2 其它限制
+
 - **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。
-  bundle 里固定了 `web.searchProvider: opencode-ds`；如果你自己的 `cordis.patch.yml` 里也有 `web` 行，
-  它层级更高，会**整体覆盖**本 bundle 的固定值（包括把 `fetchProvider` 一起抹掉）。
+  bundle 里把 `web.searchProvider` 初始化为 `opencode-ds`；如果你自己的 `cordis.patch.yml` 里也有
+  `web` 行，它层级更高，会**整体覆盖**本 bundle 的值（包括把 `fetchProvider` 一起抹掉）。
   此时请把 `searchProvider` 一并写进你自己的那一行，或删掉自己的行交给本 bundle 管。
 - **响应里没有摘要**：OpenCode 返回的 `web_search_result` 只有 `title` / `url` / `page_age`，
   没有 `snippet`。插件不会伪造摘要，所以结果里 `snippet` 缺失是预期行为（见 §1）。
   想要摘要就把 `includeAnswer` 打开，模型正文会作为 `WebSearchResult.content` 返回。
 - **按量计费端点要余额**：`goMode: false` 走 `/zen/v1`，账户没钱会返回 **HTTP 402**。
   只有 Go 套餐的账号请保持 `goMode` 开启。
-- **不校验远端目录**：插件不检查 `model` 在目标端点的模型清单里是否存在，写错了要到实际调用才报错。
+- **模型会换代**：两条路由的模型目录不同、且都会变（Go 已下架 `deepseek-v4-flash`）。
+  插件不预先校验，写错的模型要到实际调用才报错 —— 但那时错误信息会点名当前模型、当前端点，
+  并让你去查该端点的 `/models`。日常改模型用设置页的「模型」一格即可。
+- **密钥会过期**：过期正文是 `This API key has expired.`，去 OpenCode Console 换一把。
 - **Go / 按量是两个独立权益**：同一个 OpenCode 账号上，Go 套餐的密钥不等于按量计费可用，反之亦然。
 - 端点行为、模型目录都可能随时变动；§1 的实测结论标注了日期，请以你的实际请求为准。
 
