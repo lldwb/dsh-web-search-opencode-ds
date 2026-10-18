@@ -1,4 +1,4 @@
-﻿# probe-opencode.ps1 - scripts/probe-opencode.sh 的 Windows 孪生版本。
+# probe-opencode.ps1 - scripts/probe-opencode.sh 的 Windows 孪生版本。
 #
 # 验证 OpenCode 的 Anthropic 兼容 Messages 端点确实会运行 DeepSeek 官方的服务端
 # `web_search` 工具，并钉死本插件所依赖的两项请求头要求：
@@ -37,7 +37,7 @@ $ErrorActionPreference = 'Continue'
 
 $DefaultEndpoint = if ($Mode -eq 'metered') { 'https://opencode.ai/zen/v1/messages' } else { 'https://opencode.ai/zen/go/v1/messages' }
 $Endpoint   = if ($env:OPENCODE_MESSAGES_URL) { $env:OPENCODE_MESSAGES_URL } else { $DefaultEndpoint }
-$Model      = if ($env:OPENCODE_MODEL)        { $env:OPENCODE_MODEL }        else { 'deepseek-v4-flash' }
+$Model      = if ($env:OPENCODE_MODEL)        { $env:OPENCODE_MODEL }        else { 'deepseek-v4.1-flash' }
 $ApiVersion = if ($env:OPENCODE_API_VERSION)  { $env:OPENCODE_API_VERSION }  else { '2023-06-01' }
 $Timeout    = if ($env:OPENCODE_TIMEOUT)      { [int]$env:OPENCODE_TIMEOUT } else { 120 }
 $UserAgent  = 'dsh-web-search-opencode-ds/0.2.0'

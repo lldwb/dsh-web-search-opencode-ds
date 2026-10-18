@@ -34,7 +34,10 @@ window.__ModuleLoader__.load({
       apiKeySet: 'A key is configured.',
       apiKeyUnset: 'No key found for this reference; the provider falls back to it at search time.',
       baseUrl: 'Endpoint',
-      baseUrlHint: 'Leave blank to derive it from the mode below.',      maxUses: 'Max searches per request',
+      baseUrlHint: 'Leave blank to derive it from the mode below.',
+      model: 'Model',
+      modelHint: 'Anthropic-format model id. The Go plan and the metered catalog list different models, and both change over time; leave blank to use the provider default.',
+      maxUses: 'Max searches per request',
       maxUsesHint: 'How many times one request may search before it must answer.',
       overrideOfficial: 'Override the official web-search configuration',
       overrideOfficialHint:
@@ -62,6 +65,8 @@ window.__ModuleLoader__.load({
       apiKeyUnset: '该引用下未找到密钥；搜索时会再尝试解析一次。',
       baseUrl: '接口地址',
       baseUrlHint: '留空则按下方的模式自动决定。',
+      model: '模型',
+      modelHint: 'Anthropic 格式的模型 id。Go 套餐与按量计费的模型目录并不相同，而且都会变；留空表示使用提供方默认值。',
       maxUses: '单次请求最多搜索次数',
       maxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
       overrideOfficial: '覆盖官方网页搜索配置',
@@ -247,6 +252,20 @@ window.__ModuleLoader__.load({
             }
           }),
           react_jsx_runtime.jsx(P.SettingsValueField, {
+            id: 'plugin-config-open-code-model',
+            label: t('model'),
+            hint: t('modelHint'),
+            ...valueLabels,
+            disabled,
+            ...state.model,
+            onEdit: (text) => {
+              props.edit('model', text);
+            },
+            onReset: () => {
+              props.resetField('model');
+            }
+          }),
+          react_jsx_runtime.jsx(P.SettingsValueField, {
             id: 'plugin-config-open-code-max-uses',
             label: t('maxUses'),
             hint: t('maxUsesHint'),
@@ -315,6 +334,7 @@ window.__ModuleLoader__.load({
           scope,
           [
             P.settingsTextField('baseURL'),
+            P.settingsTextField('model'),
             P.settingsNumberField('maxUses'),
             settingsBooleanField('overrideOfficial'),
             settingsBooleanField('goMode')
@@ -338,6 +358,7 @@ window.__ModuleLoader__.load({
         return {
           ...this.form.shell(),
           baseURL: this.form.field('baseURL'),
+          model: this.form.field('model'),
           maxUses: this.form.field('maxUses'),
           overrideOfficial: this.form.field('overrideOfficial'),
           goMode: this.form.field('goMode'),

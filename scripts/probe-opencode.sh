@@ -20,7 +20,7 @@
 #   metered  https://opencode.ai/zen/v1      默认的按量计费 API
 #
 # 两者都已确认存在：对每个端点 GET .../models 都返回 200（Go 有 43 个 id，按量计费
-# 有 85 个），且两份目录里都列出了 `deepseek-v4-flash`。在没有按量计费余额的账户上，
+# 有 85 个，而 Go 只有 37 个；`deepseek-v4-flash` 已从 Go 下架，只剩按量计费侧）。
 # 按量计费端点会返回 **HTTP 402 "Insufficient account funds"** —— 这是账户事实，
 # 不是路由损坏，也正是这里把 402 报告为资金问题而不是检查失败的原因。
 #
@@ -30,7 +30,7 @@
 # 环境变量：
 #   OPENCODE_API_KEY      必填（OPENCODE_GO_API_KEY 可作为回退）
 #   OPENCODE_MESSAGES_URL 直接覆盖端点
-#   OPENCODE_MODEL        默认 deepseek-v4-flash
+#   OPENCODE_MODEL        默认 deepseek-v4.1-flash
 #   OPENCODE_TIMEOUT      默认 120（秒；一次搜索是一整轮模型调用）
 #
 # 退出码：0 = 所有检查都符合预期，1 = 有检查偏离预期，
@@ -46,7 +46,7 @@ case "$MODE" in
 esac
 
 ENDPOINT="${OPENCODE_MESSAGES_URL:-$DEFAULT_ENDPOINT}"
-MODEL="${OPENCODE_MODEL:-deepseek-v4-flash}"
+MODEL="${OPENCODE_MODEL:-deepseek-v4.1-flash}"
 API_VERSION="${OPENCODE_API_VERSION:-2023-06-01}"
 TIMEOUT="${OPENCODE_TIMEOUT:-120}"
 USER_AGENT="dsh-web-search-opencode-ds/0.2.0"

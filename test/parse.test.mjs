@@ -770,3 +770,47 @@ test('Config 接受空配置并应用每一个默认值', () => {
   assert.equal(options.goMode, true);
   assert.equal(options.overrideOfficial, true);
 });
+
+// ── 模型换代 ────────────────────────────────────────────────────────────────
+// 2026-10-18 实测：Go 套餐下架了 `deepseek-v4-flash`，只剩 `deepseek-v4.1-flash`
+// 与 `deepseek-v4-pro`；按量计费侧仍保留旧的。默认值必须在两条路由都能跑，
+// 否则切一下 goMode 就静默失效。
+
+test('默认模型在两条路由上都存在', () => {
+  assert.equal(DEFAULT_MODEL, 'deepseek-v4.1-flash');
+  // 回归保护：这是当初真正踩到的坑——Go 下架 v4-flash 让旧默认值直接失效。
+  assert.notEqual(DEFAULT_MODEL, 'deepseek-v4-flash');
+});
+
+test('端点不认这个模型时给出可执行的排查提示', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        type: 'error',
+        error: { type: 'invalid_request_error', message: 'model: unknown model deepseek-v4-flash' },
+      }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    );
+  try {
+    const ctx = { get: () => undefined };
+    const provider = new OpenCodeSearchProvider(ctx, () =>
+      resolveOptions(ctx, { apiKey: 'sk-test', model: 'deepseek-v4-flash', retries: 0 }));
+    await assert.rejects(
+      () => provider.search({ query: 'x' }),
+      (error) => {
+        assert.ok(error instanceof WebSearchError);
+        assert.equal(error.code, 'WEB_PROVIDER_ERROR');
+        // 消息必须点名当前模型、当前端点，并给出 /models 这条可执行的动作。
+        assert.match(error.message, /deepseek-v4-flash/u);
+        assert.match(error.message, /\/models/u);
+        // 还要解释为什么换模式可能有用（两条路由目录不同）。
+        assert.match(error.message, /路由|goMode/u);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
