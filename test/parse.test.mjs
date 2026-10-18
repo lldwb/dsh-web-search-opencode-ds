@@ -772,14 +772,18 @@ test('Config 接受空配置并应用每一个默认值', () => {
 });
 
 // ── 模型换代 ────────────────────────────────────────────────────────────────
-// 2026-10-18 实测：Go 套餐下架了 `deepseek-v4-flash`，只剩 `deepseek-v4.1-flash`
-// 与 `deepseek-v4-pro`；按量计费侧仍保留旧的。默认值必须在两条路由都能跑，
-// 否则切一下 goMode 就静默失效。
+// 2026-10-18 用有效凭据实测：目录里有没有模型，和这个模型会不会真的执行
+// `web_search`，**是两件事**。
+//   - deepseek-v4-pro      : 目录里有 + 实测 1–2 次搜索 / 10–20 条结果  ✅
+//   - deepseek-v4.1-flash  : 目录里有 + 实测 0 次搜索（只思考）          ❌
+//   - deepseek-v4-flash    : 目录已移除 + 实测仍能搜出 20 条              ⚠️
+// 所以默认值只能取「目录里有且实测能搜」的交集。
 
-test('默认模型在两条路由上都存在', () => {
-  assert.equal(DEFAULT_MODEL, 'deepseek-v4.1-flash');
-  // 回归保护：这是当初真正踩到的坑——Go 下架 v4-flash 让旧默认值直接失效。
-  assert.notEqual(DEFAULT_MODEL, 'deepseek-v4-flash');
+test('默认模型是唯一同时满足「目录内有」与「实测能搜索」的选项', () => {
+  assert.equal(DEFAULT_MODEL, 'deepseek-v4-pro');
+  // 回归保护：这两个都曾经被误当成可用的默认值。
+  assert.notEqual(DEFAULT_MODEL, 'deepseek-v4.1-flash', '它在目录里但不执行服务端搜索');
+  assert.notEqual(DEFAULT_MODEL, 'deepseek-v4-flash', '它已被移出目录，不宜作默认');
 });
 
 test('端点不认这个模型时给出可执行的排查提示', async () => {

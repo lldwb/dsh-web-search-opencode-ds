@@ -48,15 +48,40 @@
 |---|---|
 | `GET /zen/go/v1/models` | 200，**37** 个模型（上次 43）；deepseek 只剩 `deepseek-v4.1-flash`、`deepseek-v4-pro` |
 | `GET /zen/v1/models` | 200，**85** 个模型；含 `deepseek-v4-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-free`、`deepseek-v4-pro` |
-| **`deepseek-v4-flash` 还在 Go 套餐里吗** | **不在了**。Go 已下架，按量计费侧仍保留 —— 所以本插件的默认值改成了 `deepseek-v4.1-flash` |
 | 专用检索 API：`/search`、`/fetch`、`/tools/search`、`/tools/fetch`、`/web/search`、`/web/fetch`（两条路由 × GET/POST） | **全部 404** —— OpenCode **没有** DeepSeek 那套专用 Search/Fetch API |
 | `v2` 路由家族（`/zen/go/v2/models`、`/zen/v2/models`） | **404** —— 没有版本跃迁 |
-| 已存储的 API key | **已过期**：`authentication_error: This API key has expired.` |
+| `/responses`（OpenAI Responses 风格端点） | 端点**存在**且返回 200（`object: "response"`），但**不透传原生 web_search** |
+| `tools:[{type:"web_search"}]` / `web_search_preview` 打到 `/responses` | ❌ `output` 里没有 `web_search_call`，不搜索 |
+| 旧凭据 | 已过期（`This API key has expired.`）；换用有效凭据后重测了下面几行 |
 
-> ⚠️ **这一轮被凭据阻塞**：「`web_search_20250305` 是否仍是当前工具版本」与「Go 套餐是否支持
-> 更新版 API」都需要**有效密钥**才能测，而本机密钥已过期。这里不臆测结论。确定性的事实只有一条：
-> **OpenCode 只有 Messages 一条检索路径，专用 Search/Fetch API 不存在**（404 与密钥有效性无关，
-> 端点存在会返回 401/405 而不是 404）。
+### 1.3 模型与工具的有效性（2026-10-18，有效凭据）
+
+同一提示词、`web_search_20250305`、`max_uses: 5`，只换模型：
+
+| 模型 | 在 `/models` 目录里 | 实际执行服务端搜索 | 结果数 |
+|---|---|---|---|
+| **`deepseek-v4-pro`** | ✅ | ✅ 1–2 次 `server_tool_use` | **10–20** |
+| `deepseek-v4.1-flash` | ✅ | ❌ **0 次**（只 thinking + text，两种提示词都是 0） | 0 |
+| `deepseek-v4-flash` | ❌ 已移除 | ✅ 仍可用 | 20 |
+
+> **这两条反直觉结论是本插件最容易踩的坑，务必记住：**
+>
+> 1. **在目录里 ≠ 能用。** `deepseek-v4.1-flash` 明明在 `/models` 里，配它却**完全不会搜索** ——
+>    模型只是思考一下就作答，静默失去联网能力（不会报错）。
+> 2. **不在目录里 ≠ 不能用。** `deepseek-v4-flash` 已从 `/models` 移除，却仍能搜出 20 条结果。
+>
+> 所以默认值只能取「**目录里有 且 实测能搜**」的交集 —— 只有 `deepseek-v4-pro` 满足。
+> 不能用 `/models` 来推断可用性。
+
+其它同时确认的事实：
+
+- `max_tokens` 给太小会毁掉结论：`1024` 会被 thinking 吃光（`stop_reason: max_tokens`），
+  看起来「搜不到结果」其实根本没轮到工具。测搜索至少给 4096。
+- 按量计费（`/zen/v1`）在无余额账户上对所有模型都返回 **402**。
+- 工具版本阶梯（`web_search_20250415`…`web_search_20251015`、裸 `web_search`）全部返回 200，
+  但响应里是 **`tool_use`（客户端工具）** 而不是 `server_tool_use` —— 说明只有
+  `web_search_20250305` 被识别为原生服务端工具，其它拼写会被当成普通 function tool。
+  因此**不能用「HTTP 200」来判断某个工具版本是否被支持**。
 
 ### 由此得到的硬结论
 
@@ -65,13 +90,12 @@
    会话 id，「先创建会话」这条分支不存在，不需要实现。
 2. **真正鉴权的是 `x-api-key`。** 最初的需求写的是只用 `Authorization: Bearer`，但那样会被 401 拒绝。
    本插件**两个头都发**，这样网关两种行为都活得下来。
-3. **两个端点共用一套 wire format。** `goMode` 只改 base URL，请求体、头都不变 ——
-   但**模型可用性不同**：2026-10-18 起 Go 目录已不含 `deepseek-v4-flash`。默认值取
-   `deepseek-v4.1-flash`，因为它在两条路由都存在。
-4. **按量计费端点要账户有余额。** 本机账户只有 Go 套餐，所以 `/zen/v1` 稳定返回 402。
+3. **两个端点共用一套 wire format。** `goMode` 只改 base URL，请求体、头都不变。
+4. **默认模型取 `deepseek-v4-pro`。** 理由见 §1.3：它是唯一同时满足「目录里有」与「实测能搜索」的。
+5. **按量计费端点要账户有余额。** 本机账户只有 Go 套餐，所以 `/zen/v1` 稳定返回 402。
    这是**账户事实，不是插件 bug** —— 插件会把 402 单独翻译成「余额不足，要么充值、要么把
    `goMode` 打回开启」的提示，而不是笼统报一个 HTTP 错误。
-5. **密钥会过期。** 过期时正文是 `This API key has expired.`，去 OpenCode Console 换一把即可；
+6. **密钥会过期。** 过期时正文是 `This API key has expired.`，去 OpenCode Console 换一把即可；
    插件会在 401 文案里点名这一点。
 
 ### 一个必须知道的限制：响应里没有 snippet
@@ -173,7 +197,7 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | 控件 | 字段 | 说明 |
 |---|---|---|
 | API Key | `apiKey` | 只写不读。写进凭据库；留空表示不改动现有密钥 |
-| 模型 | `model` | 决定实际用哪个模型；留空用默认 `deepseek-v4.1-flash` |
+| 模型 | `model` | 决定实际用哪个模型；留空用默认 `deepseek-v4-pro` |
 | 接口地址 | `baseURL` | 留空则**按下面的模式自动决定** |
 | 单次请求最多搜索次数 | `maxUses` | 一次请求在必须作答前最多搜几次 |
 | **覆盖官方网页搜索配置** | `overrideOfficial` | 见 §4.1 |
@@ -234,7 +258,7 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | `apiKey` | — | ✅（secret） | 字面量密钥，优先级最高，不会被表单持久化 |
 | `apiKeyEnv` | `OPENCODE_API_KEY` | ✅（credential-ref） | 凭据引用名 |
 | `baseURL` | 空 | ✅ | 空 = 按 `goMode` 决定 |
-| `model` | `deepseek-v4.1-flash` | ✅ | Anthropic 格式模型名；两条路由都有 |
+| `model` | `deepseek-v4-pro` | ✅ | Anthropic 格式模型名；唯一「目录内有且实测能搜索」的 |
 | `apiVersion` | `2023-06-01` | ✅ | `anthropic-version` 头 |
 | `maxTokens` | `4096` | ✅ | 生成上限 |
 | `maxUses` | `5` | ✅ | 服务端搜索次数上限 |
@@ -432,7 +456,7 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
   想要摘要就把 `includeAnswer` 打开，模型正文会作为 `WebSearchResult.content` 返回。
 - **按量计费端点要余额**：`goMode: false` 走 `/zen/v1`，账户没钱会返回 **HTTP 402**。
   只有 Go 套餐的账号请保持 `goMode` 开启。
-- **模型会换代**：两条路由的模型目录不同、且都会变（Go 已下架 `deepseek-v4-flash`）。
+- **模型会换代，且目录不可信**：目录里有不代表会搜索（`deepseek-v4.1-flash` 就不搜），不在目录里也可能仍能用（`deepseek-v4-flash` 仍可）。换模型后请确认搜索真的发生了（看结果里有没有 `Sources`）。
   插件不预先校验，写错的模型要到实际调用才报错 —— 但那时错误信息会点名当前模型、当前端点，
   并让你去查该端点的 `/models`。日常改模型用设置页的「模型」一格即可。
 - **密钥会过期**：过期正文是 `This API key has expired.`，去 OpenCode Console 换一把。
