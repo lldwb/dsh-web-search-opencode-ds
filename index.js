@@ -32,6 +32,25 @@
  * 以及「Go 套餐是否支持更新版 API」—— 两条都需要有效凭据。这里不臆测结论；
  * 已知的确定性事实是：OpenCode 只有 Messages 一条检索路径，专用 API 不存在。
  *
+ * ### 2026-10-18（换用有效凭据后的复验）
+ *
+ * | 观察项 | 结果 |
+ * |---|---|
+ * | `web_search_20250305` + `deepseek-v4-pro` | ✅ 1–2 次 `server_tool_use` + 10–20 条 `web_search_result` |
+ * | `web_search_20250305` + `deepseek-v4.1-flash` | ❌ 200 但**从不调用搜索**（只 thinking+text），两种提示词都是 0 次 |
+ * | `web_search_20250305` + `deepseek-v4-flash`（已从目录移除） | ✅ 仍可用，2 次搜索 / 20 条结果 |
+ * | `/responses`（OpenAI Responses 风格端点） | 端点**存在**且返回 200，但**不透传**原生 web_search |
+ * | `tools:[{type:"web_search"}]` / `web_search_preview` 打到 `/responses` | ❌ output 里没有 `web_search_call`，不搜索 |
+ * | 专用 Search/Fetch 路径（有效凭据下重测） | **仍然全部 404** |
+ * | `deepseek-v4.1-flash` 的 token 用量 | 提示词 1 用满 4096 output tokens（stop=max_tokens），提示词 2 只用 90 |
+ *
+ * 由此得到两条反直觉但关键的结论：
+ *
+ * - **在目录里 ≠ 能用。** `deepseek-v4.1-flash` 在 `/models` 里，却不执行服务端搜索。
+ * - **不在目录里 ≠ 不能用。** `deepseek-v4-flash` 已从 `/models` 移除，仍能跑出 20 条结果。
+ *
+ * 所以默认模型只能取「目录里有 **且** 实测能搜索」的交集：`deepseek-v4-pro`。
+ *
  * 由此固化进本实现的结论：
  *
  * 1. **`x-opencode-session` 是必需的**，且由*客户端生成*。提供方默认每次搜索
@@ -100,11 +119,24 @@ export const DEFAULT_BASE_URL = GO_BASE_URL;
 /**
  * 默认的 Anthropic 格式模型 id。
  *
- * 选 `deepseek-v4.1-flash` 而不是旧的 `deepseek-v4-flash`：2026-10-18 实测前者在
- * **两条路由都存在**，后者已从 Go 套餐下架（只剩按量计费侧）。默认值必须在两种
- * 模式下都能跑，否则切一下 `goMode` 就会静默失效。
+ * 选 `deepseek-v4-pro`，依据是 2026-10-18 用有效凭据做的实测（`web_search_20250305`
+ * + `max_uses: 5`，同一提示词）：
+ *
+ * | 模型 | 在 Go 目录里 | 实际执行服务端搜索 |
+ * |---|---|---|
+ * | `deepseek-v4-pro` | ✅ | ✅ 1–2 次搜索 / 10–20 条结果 |
+ * | `deepseek-v4.1-flash` | ✅ | ❌ **0 次**（只思考+作答，两种提示词都是 0） |
+ * | `deepseek-v4-flash` | ❌ 已移除 | ✅ 仍可用（20 条结果） |
+ *
+ * 两个反直觉之处，都是踩过的：
+ * 1. **在目录里 ≠ 能用。** `deepseek-v4.1-flash` 目录里有，但根本不调用 `web_search`，
+ *    配它等于静默失去搜索能力。
+ * 2. **不在目录里 ≠ 不能用。** `deepseek-v4-flash` 已从 `/models` 移除，却仍能跑出 20 条
+ *    结果。所以不能用目录来推断可用性 —— 但它既然被移除，就不适合作默认值。
+ *
+ * 于是取交集：**目录里有、且实测能搜索**的只有 `deepseek-v4-pro`。
  */
-export const DEFAULT_MODEL = 'deepseek-v4.1-flash';
+export const DEFAULT_MODEL = 'deepseek-v4-pro';
 
 /** 默认的 `anthropic-version` 请求头取值。 */
 export const DEFAULT_API_VERSION = '2023-06-01';
