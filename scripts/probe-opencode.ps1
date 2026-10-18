@@ -37,7 +37,7 @@ $ErrorActionPreference = 'Continue'
 
 $DefaultEndpoint = if ($Mode -eq 'metered') { 'https://opencode.ai/zen/v1/messages' } else { 'https://opencode.ai/zen/go/v1/messages' }
 $Endpoint   = if ($env:OPENCODE_MESSAGES_URL) { $env:OPENCODE_MESSAGES_URL } else { $DefaultEndpoint }
-$Model      = if ($env:OPENCODE_MODEL)        { $env:OPENCODE_MODEL }        else { 'deepseek-v4.1-flash' }
+$Model      = if ($env:OPENCODE_MODEL)        { $env:OPENCODE_MODEL }        else { 'deepseek-v4-pro' }
 $ApiVersion = if ($env:OPENCODE_API_VERSION)  { $env:OPENCODE_API_VERSION }  else { '2023-06-01' }
 $Timeout    = if ($env:OPENCODE_TIMEOUT)      { [int]$env:OPENCODE_TIMEOUT } else { 120 }
 $UserAgent  = 'dsh-web-search-opencode-ds/0.2.0'
