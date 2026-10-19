@@ -83,6 +83,37 @@
   `web_search_20250305` 被识别为原生服务端工具，其它拼写会被当成普通 function tool。
   因此**不能用「HTTP 200」来判断某个工具版本是否被支持**。
 
+### 1.4 沙箱回归（2026-10-19，`dsh-plugin-devkit`）
+
+按工作区约定（`AGENTS.md` §3），改动插件后要在 devkit 沙箱里做一次**真实 Loader 回归**——单测（mock ctx）看不见"插件到底加载没有、工具在真实注册表里叫不叫得动"。
+
+**环境**：`devkit_sandbox_create`（headless 模板，独立 `DSH_HOME`，模型 overlay 抄自真实 desktop profile），`devkit_sandbox_install` 装本插件，**未改动真实 `~/.dsh`**。
+
+**第 3 步 · 合成校验**（零 token）：`devkit_sandbox_compose` → `exit 0 · 431 行`，命中 4 行：
+
+```
+# == @deepseek-ai/dsh-base, patched by dsh-web-search-opencode-ds
+# == dsh-web-search-opencode-ds
+- id: web-search-opencode-ds
+  name: dsh-web-search-opencode-ds
+```
+
+**第 4 步 · 真实 Loader 回归**：在沙箱里跑一轮 headless 任务，逼模型调用 `web_search` 并逐字回贴原始结果。结果：**成功返回 8 条结果**（标题 + URL，无错误），凭据注入 `DEEPSEEK_API_KEY / OPENCODE_API_KEY / OPENCODE_GO_API_KEY / SUB2API_API_KEY`。
+
+> 这一次回归**直接验证了 §1.3 的修正**：默认模型 `deepseek-v4-pro` 真的会执行服务端搜索。若默认值仍是 `deepseek-v4.1-flash`，回归的表现会是"工具返回 200 但 0 条结果"——即 §1.3 记录的静默失效。
+
+**第 5 步**：`devkit_sandbox_destroy` 已清理，`devkit-sandboxes` 下无残留。
+
+复现（创造模式，需要 `dsh-plugin-devkit`）：
+
+```
+devkit_sandbox_create  { name: "websearch-regress", template: "headless" }
+devkit_sandbox_install { name: "websearch-regress", target: "E:\\dsh-plugins\\dsh-web-search-opencode-ds" }
+devkit_sandbox_compose { name: "websearch-regress", grep: "web-search-opencode" }
+devkit_sandbox_run     { name: "websearch-regress", task: "调用 web_search 查询「DeepSeek Harness 插件」，把原始结果逐字贴出来" }
+devkit_sandbox_destroy { name: "websearch-regress" }
+```
+
 ### 由此得到的硬结论
 
 1. **`x-opencode-session` 是强制头，而且由客户端自己生成。** 默认每次搜索新生成一个 UUID v4
