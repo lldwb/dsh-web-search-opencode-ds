@@ -1,11 +1,11 @@
 {
   "name": "dsh-web-search-opencode-ds",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "把 OpenCode 作为 DeepSeek Harness 的网页搜索提供方：经 OpenCode 的 Anthropic 兼容 Messages 接口调用 DeepSeek 的服务端 web_search，并自带设置页。",
   "type": "module",
   "license": "MIT",
   "private": true,
-  "icon": "./icon.svg",
+  "icon": "./icon.png",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
@@ -18,7 +18,7 @@
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
-    "icon.svg",
+    "icon.png",
     "README.md",
     "LICENSE",
     "scripts/*",
