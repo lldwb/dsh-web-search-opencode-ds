@@ -14,9 +14,18 @@
 # 悄无声息地失效。
 #
 # LOADER 补丁方言 —— 按 id 定位的补丁会**整体替换**目标行的 `config`，从不做深
-# 合并。内置的 `web` 行目前不带 config，所以只重述 `searchProvider` 不会丢东西。
-# 如果你（或更高优先级的层，比如 profile 自己的 cordis.patch.yml）给 `web` 行
-# 加了 `fetchProvider`，那一层必须把两个字段都重述一遍，否则会丢掉其中一个。
+# 合并。所以下面必须把 `web` 行的两个字段都重述一遍：
+#
+#   - `searchProvider: opencode-ds` —— 本插件的固定绑定（核心目的）。
+#   - `fetchProvider: http` —— 随附 `dsh-base` 的默认值。DSH **0.2.2 起**内置
+#     `web` 行自己就带 `{ searchProvider: deepseek-official, fetchProvider: http }`，
+#     只写 `searchProvider` 会把这个默认值抹掉；而 `web` 层在未配置 fetchProvider 时
+#     走「唯一可用 provider」规则 —— `http` 与 `deepseek-fetch-api`（带 DEEPSEEK_API_KEY
+#     时可用）同时可用就会抛 `WEB_PROVIDER_AMBIGUOUS`，`web_fetch` 直接不可用。
+#     重述它保持与内置默认一致。
+#
+# 更高优先级的层（比如 profile 自己的 cordis.patch.yml）若也给 `web` 行写 config，
+# 同样要两个字段都写，否则会丢掉其中一个。
 #
 # 层顺序提醒：所有 bundle 补丁先执行，然后是 profile 自己的 cordis.patch.yml，
 # 最后是 --patch 覆盖层。因此 profile 级别的 `web` 行会覆盖下面的固定绑定 ——
@@ -48,3 +57,6 @@
     #   goMode: true            -> OpenCode Go 套餐端点  (/zen/go/v1)
     #   goMode: false           -> 按量计费的 OpenCode 端点  (/zen/v1)
     searchProvider: opencode-ds
+    # 与 `dsh-base` 的默认值一致；必须重述，否则整块替换会把内置默认抹掉
+    # （见上方 LOADER 补丁方言说明）。
+    fetchProvider: http

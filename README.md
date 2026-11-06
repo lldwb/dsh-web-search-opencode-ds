@@ -479,9 +479,12 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
 ### 12.2 其它限制
 
 - **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。
-  bundle 里把 `web.searchProvider` 初始化为 `opencode-ds`；如果你自己的 `cordis.patch.yml` 里也有
-  `web` 行，它层级更高，会**整体覆盖**本 bundle 的值（包括把 `fetchProvider` 一起抹掉）。
-  此时请把 `searchProvider` 一并写进你自己的那一行，或删掉自己的行交给本 bundle 管。
+  **DSH 0.2.2 起内置 `web` 行自己就带 `config: { searchProvider: deepseek-official, fetchProvider: http }`**，
+  所以本 bundle 现在把两个字段都重述一遍（`searchProvider: opencode-ds` + `fetchProvider: http`，见 §13）；
+  只写 `searchProvider` 会把 `fetchProvider` 抹掉，而 `ctx.web` 在未配置 fetchProvider 时会走「唯一可用提供方」
+  规则 —— `http` 与 `deepseek-fetch-api`（有 `DEEPSEEK_API_KEY` 时可用）同时可用就抛 `WEB_PROVIDER_AMBIGUOUS`，
+  `web_fetch` 直接不可用。如果你自己的 `cordis.patch.yml` 里也有 `web` 行，它层级更高，会**整体覆盖**本 bundle
+  的值；此时请把**两个字段都**写进你自己的那一行，或删掉自己的行交给本 bundle 管。
 - **响应里没有摘要**：OpenCode 返回的 `web_search_result` 只有 `title` / `url` / `page_age`，
   没有 `snippet`。插件不会伪造摘要，所以结果里 `snippet` 缺失是预期行为（见 §1）。
   想要摘要就把 `includeAnswer` 打开，模型正文会作为 `WebSearchResult.content` 返回。
@@ -493,6 +496,63 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
 - **密钥会过期**：过期正文是 `This API key has expired.`，去 OpenCode Console 换一把。
 - **Go / 按量是两个独立权益**：同一个 OpenCode 账号上，Go 套餐的密钥不等于按量计费可用，反之亦然。
 - 端点行为、模型目录都可能随时变动；§1 的实测结论标注了日期，请以你的实际请求为准。
+
+---
+
+## 13. DSH 0.2.2-rc.1 适配与回归（2026-11-06）
+
+### 13.1 修了什么：`web` 行的 `fetchProvider` 被整块替换抹掉
+
+DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config：
+
+```yaml
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: deepseek-official
+    fetchProvider: http
+```
+
+而 Loader 的 id 定向补丁是**整块替换** `config`、不做深合并。本插件的 `cordis.patch.yml` 此前只重述
+`searchProvider: opencode-ds`（当时的注释写着「内置 `web` 行目前不带 config」——在 0.2.0/0.2.1 成立，**0.2.2 起不再成立**），
+于是 `fetchProvider` 变成未配置。`ctx.web` 的选择规则是：没有配置 id 时，若**唯一**可用提供方就选它，
+多个可用则抛 `WEB_PROVIDER_AMBIGUOUS`。默认注册的 fetch 提供方有两个：
+
+| 提供方 id | 注册者 | 何时可用 |
+|---|---|---|
+| `http` | `@deepseek-ai/dsh-web-fetch-http` | 始终 |
+| `deepseek-fetch-api` | `@deepseek-ai/dsh-web-deepseek-api` | `DEEPSEEK_API_KEY` 可解析且 baseURL 合法时 |
+
+所以只要用户在凭据库里配了 `DEEPSEEK_API_KEY`（绝大多数人都会，它是模型凭据），`web_fetch` 就会以
+`WEB_PROVIDER_AMBIGUOUS` 失败 —— 而且因为 0.2.2 的 `tool-web` 用 `fetchReady()` 决定是否挂载工具，
+而 `fetchReady()` 在选择失败时**返回 true**（"失败由调用方报告"），工具照样出现、调用时才炸，排查成本高。
+
+**修复**：在 `cordis.patch.yml` 的 `web` 行里把 `fetchProvider: http` 一起重述（与 `dsh-base` 默认一致），
+两个字段同时写、顺序无关。这样搜索仍固定走 `opencode-ds`，抓取保持内置默认的匿名 HTTP 实现。
+
+### 13.2 为什么不用别的方案
+
+- **不写 `web` 行、靠环境变量 `DSH_WEB_SEARCH_PROVIDER`**：环境变量是 `config.searchProvider.get() ?? env`
+  的后备，不是绑定；而本插件要的就是"开箱即用是本插件"，不能要求用户配环境变量。
+- **把 `fetchProvider` 留空**：即上面的 bug。
+- **在 `index.js` 运行时改 `web` 行的 config**：违反层级约定（bundle 层低于 profile 层），且改不回来。
+
+### 13.3 回归证据（2026-11-06，DSH 0.2.2-rc.1）
+
+- **合成树**（devkit web 沙箱 `ui-websearch`，`dsh --profile … --dump-config`）：`web` 行同时含
+  `searchProvider: opencode-ds` 与 `fetchProvider: http`；插件行 `- id: web-search-opencode-ds` 在树里。
+- **Host 侧真实调用**（devkit headless 沙箱 `ws-regress`，凭据注入 `OPENCODE_API_KEY` 等）：
+  - `web_fetch https://example.com` → **成功**：`Fetched https://example.com/ (HTTP 200)` + 页面正文
+    （证明 `fetchProvider: http` 生效、不再 ambiguity）；
+  - `web_search` → 请求**真的发到了** OpenCode Go 端点并被插件自己的错误格式化返回：
+    `Error: OpenCode API 错误（HTTP 429）: Go usage limit exceeded`（证明 provider 已注册、被选中、
+    请求构造与响应映射路径都跑通；429 是上游套餐用量超限，属外部配额问题，不是插件/DSH 缺陷）。
+- **设置页 UI 回归**：`dsh-web-search-opencode-ds@0.3.4 is loaded: its client half is in the page's manifest`
+  （引号内是沙箱当时的实际输出，当时 link 的版本是 0.3.4；本次改动只有 `cordis.patch.yml` 的 `fetchProvider` 与文档）；
+  点「插件 → 网页搜索（OpenCode）」（设置页卡片标题用 `settings.title`，包卡片是 `meta.title`）后设置页完整渲染：
+  API Key（密文，显示"该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
+  「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮；**控制台 0 错误**。
+- **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**。
 
 ---
 
