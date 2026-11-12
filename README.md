@@ -479,7 +479,8 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
 ### 12.2 其它限制
 
 - **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。
-  **DSH 0.2.2 起内置 `web` 行自己就带 `config: { searchProvider: deepseek-official, fetchProvider: http }`**，
+  **DSH 0.2.2 起内置 `web` 行自己就带 `config: { searchProvider, fetchProvider: http }`**
+  （`searchProvider` 的默认值在 0.2.2-rc.1 是 `deepseek-official`、**rc.2 改成 `deepseek-search-api`**），
   所以本 bundle 现在把两个字段都重述一遍（`searchProvider: opencode-ds` + `fetchProvider: http`，见 §13）；
   只写 `searchProvider` 会把 `fetchProvider` 抹掉，而 `ctx.web` 在未配置 fetchProvider 时会走「唯一可用提供方」
   规则 —— `http` 与 `deepseek-fetch-api`（有 `DEEPSEEK_API_KEY` 时可用）同时可用就抛 `WEB_PROVIDER_AMBIGUOUS`，
@@ -503,13 +504,14 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
 
 ### 13.1 修了什么：`web` 行的 `fetchProvider` 被整块替换抹掉
 
-DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config：
+DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config（下例是 0.2.2-rc.1 的默认值；
+**rc.2 把 `searchProvider` 改成了 `deepseek-search-api`**）：
 
 ```yaml
 - id: web
   name: '@deepseek-ai/dsh-web'
   config:
-    searchProvider: deepseek-official
+    searchProvider: deepseek-official   # rc.2 起为 deepseek-search-api
     fetchProvider: http
 ```
 
@@ -553,6 +555,38 @@ DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config：
   API Key（密文，显示"该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
   「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮；**控制台 0 错误**。
 - **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**。
+
+---
+
+## 14. DSH 0.2.2-rc.2 适配与回归（2026-11-12）
+
+### 14.1 rc.2 破坏面核对：本插件不受影响
+
+| rc.2 变更 | 对本插件的影响 |
+|---|---|
+| `WebSearchProvider` 契约（`packages/web/web/src/types.ts`） | **未变**：`id` + `available()` + `search()` 仍是必需；rc.2 只新增了可选 `title` / `description` / `ready()` 与 `web/providers-changed` 事件、`listProviders()` Remote 方法。本插件不实现这些可选字段（缺省即"就绪"），注册与派发路径不变 |
+| `web` 行 config | `searchProvider` / `fetchProvider` **仍在**（`WebRuntimeConfig` 未改），本 bundle 的固定绑定继续生效 |
+| `web-search-billing`：`web-deepseek-api` 新增 `searchBilling`/`fetchBilling`、构造函数 `baseURL`/`auth` 迁移 | **与本插件无关**：本插件从不构造 `DeepSeekSearchApiProvider`/`DeepSeekFetchApiProvider`，它只实现自己的 `opencode-ds` provider 并用 `fetch` 直接请求 OpenCode |
+| 内置 `web` 行的 `searchProvider` 默认值 rc.1→rc.2 从 `deepseek-official` 改为 `deepseek-search-api` | 本插件把该值 pin 成 `opencode-ds`，**行为不变**。但 `overrideOfficial: false` 的委托目标仍是 `deepseek-official`（rc.2 仍随附 `web-search-deepseek` 行注册它，实测可返回真实结果）——注意它已不是 rc.2 的默认官方搜索后端；想让搜索走新的 Search API 请在本插件里保持 `overrideOfficial: true` 并把 `baseURL`/`model` 配成你自己的后端，或在 profile 层改 `web` 行 |
+| 设置页字段 | 本插件编辑自己的 settings namespace（`web-search-opencode-ds`），与 rc.2 的 `web` 配置页互不影响；rc.2 里两个页面同时存在 |
+
+### 14.2 回归证据（2026-11-12，DSH 0.2.2-rc.2）
+
+- **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**。
+- **合成树**（devkit headless 沙箱）：`web` 行由 `dsh-web-search-opencode-ds` patch 后含
+  `searchProvider: opencode-ds` 与 `fetchProvider: http`；插件行 `- id: web-search-opencode-ds` 在树里。
+- **Host 侧真实调用**（headless 沙箱，注入 `OPENCODE_API_KEY`）：`web_search` 请求**真的发到**
+  `https://opencode.ai/zen/go/v1/messages`，返回本插件格式化的
+  `Error: OpenCode API 错误（HTTP 429）: OpenCode Go usage limit reached` —— provider 已注册、
+  被选中、请求构造与错误映射路径都跑通；429 是上游 Go 套餐配额，不是插件/DSH 缺陷。
+- **委托路径**（临时 patch 把本插件 `overrideOfficial` 设为 `false`）：`web_search` 委托给随附的
+  `deepseek-official` 并返回 **10 条真实来源**（DeepSeek Harness 相关页面）——rc.2 里
+  `deepseek-official` 仍存在且委托可用。
+- **设置页 UI 回归**（devkit web 沙箱 + headless Chrome）：
+  `dsh-web-search-opencode-ds@0.3.6 is loaded: its client half is in the page's manifest`，
+  控制台 0 错误；「插件 → 网页搜索（OpenCode）」页完整渲染 7 个字段：API Key（密文，提示
+  "该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
+  「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮。
 
 ---
 

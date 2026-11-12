@@ -18,11 +18,16 @@
 #
 #   - `searchProvider: opencode-ds` —— 本插件的固定绑定（核心目的）。
 #   - `fetchProvider: http` —— 随附 `dsh-base` 的默认值。DSH **0.2.2 起**内置
-#     `web` 行自己就带 `{ searchProvider: deepseek-official, fetchProvider: http }`，
-#     只写 `searchProvider` 会把这个默认值抹掉；而 `web` 层在未配置 fetchProvider 时
+#     `web` 行自己就带 `{ searchProvider, fetchProvider: http }`，只写
+#     `searchProvider` 会把这个默认值抹掉；而 `web` 层在未配置 fetchProvider 时
 #     走「唯一可用 provider」规则 —— `http` 与 `deepseek-fetch-api`（带 DEEPSEEK_API_KEY
 #     时可用）同时可用就会抛 `WEB_PROVIDER_AMBIGUOUS`，`web_fetch` 直接不可用。
 #     重述它保持与内置默认一致。
+#
+#     注意 `searchProvider` 的内置默认值随版本变过：0.2.2-rc.1 是 `deepseek-official`
+#     （Messages 路径），**0.2.2-rc.2 改成 `deepseek-search-api`**（专用 Search API）。
+#     本插件把该值固定成 `opencode-ds`，所以两种默认值下行为一致；上面的注释只解释
+#     「为什么要重述 fetchProvider」，不依赖 searchProvider 的默认值。
 #
 # 更高优先级的层（比如 profile 自己的 cordis.patch.yml）若也给 `web` 行写 config，
 # 同样要两个字段都写，否则会丢掉其中一个。
