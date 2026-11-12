@@ -583,8 +583,9 @@ DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config（下例�
   `deepseek-official` 并返回 **10 条真实来源**（DeepSeek Harness 相关页面）——rc.2 里
   `deepseek-official` 仍存在且委托可用。
 - **设置页 UI 回归**（devkit web 沙箱 + headless Chrome）：
-  `dsh-web-search-opencode-ds@0.3.6 is loaded: its client half is in the page's manifest`，
-  控制台 0 错误；「插件 → 网页搜索（OpenCode）」页完整渲染 7 个字段：API Key（密文，提示
+  `dsh-web-search-opencode-ds@0.3.5 is loaded: its client half is in the page's manifest`
+  （沙箱当时 link 的是 0.3.5；本次改动只有文档与注释，运行时代码未变），控制台 0 错误；
+  「插件 → 网页搜索（OpenCode）」页完整渲染 7 个字段：API Key（密文，提示
   "该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
   「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮。
 
