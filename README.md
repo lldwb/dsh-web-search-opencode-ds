@@ -479,9 +479,11 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
 ### 12.2 其它限制
 
 - **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。
-  **DSH 0.2.2 起内置 `web` 行自己就带 `config: { searchProvider, fetchProvider: http }`**
-  （`searchProvider` 的默认值在 0.2.2-rc.1 是 `deepseek-official`、**rc.2 改成 `deepseek-search-api`**），
-  所以本 bundle 现在把两个字段都重述一遍（`searchProvider: opencode-ds` + `fetchProvider: http`，见 §13）；
+  **DSH 0.2.2 起内置 `web` 行自己就带 `config`**（`fetchProvider: http` 始终在；`searchProvider`
+  在 0.2.2-rc.1 是 `deepseek-official`、rc.2–rc.4 是 `deepseek-search-api`），
+  **0.2.2-rc.5 起基础组合已不再 pin `web.searchProvider`**（改由 `dsh-web` 按模型路由自动选择，见 §15），
+  所以本 bundle 仍把两个字段都重述一遍（`searchProvider: opencode-ds` + `fetchProvider: http`，见 §13）；
+  **本插件始终显式 pin，rc.5 下行为不变**。
   只写 `searchProvider` 会把 `fetchProvider` 抹掉，而 `ctx.web` 在未配置 fetchProvider 时会走「唯一可用提供方」
   规则 —— `http` 与 `deepseek-fetch-api`（有 `DEEPSEEK_API_KEY` 时可用）同时可用就抛 `WEB_PROVIDER_AMBIGUOUS`，
   `web_fetch` 直接不可用。如果你自己的 `cordis.patch.yml` 里也有 `web` 行，它层级更高，会**整体覆盖**本 bundle
@@ -505,13 +507,14 @@ DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使�
 ### 13.1 修了什么：`web` 行的 `fetchProvider` 被整块替换抹掉
 
 DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config（下例是 0.2.2-rc.1 的默认值；
-**rc.2 把 `searchProvider` 改成了 `deepseek-search-api`**）：
+**rc.2 把 `searchProvider` 改成了 `deepseek-search-api`**；**0.2.2-rc.5 起基础组合已删除这个
+`searchProvider` pin、只保留 `fetchProvider: http`，下例仅作历史对照，见 §15**）：
 
 ```yaml
 - id: web
   name: '@deepseek-ai/dsh-web'
   config:
-    searchProvider: deepseek-official   # rc.2 起为 deepseek-search-api
+    searchProvider: deepseek-official   # rc.2–rc.4 为 deepseek-search-api；rc.5 起该 pin 已删除（见 §15）
     fetchProvider: http
 ```
 
@@ -565,9 +568,9 @@ DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config（下例�
 | rc.2 变更 | 对本插件的影响 |
 |---|---|
 | `WebSearchProvider` 契约（`packages/web/web/src/types.ts`） | **未变**：`id` + `available()` + `search()` 仍是必需；rc.2 只新增了可选 `title` / `description` / `ready()` 与 `web/providers-changed` 事件、`listProviders()` Remote 方法。本插件不实现这些可选字段（缺省即"就绪"），注册与派发路径不变 |
-| `web` 行 config | `searchProvider` / `fetchProvider` **仍在**（`WebRuntimeConfig` 未改），本 bundle 的固定绑定继续生效 |
+| `web` 行 config | `searchProvider` / `fetchProvider` **仍在**（`WebRuntimeConfig` 未改），本 bundle 的固定绑定继续生效（rc.2 事实；**rc.5 起基础组合已删除内置 `searchProvider` pin，见 §15**） |
 | `web-search-billing`：`web-deepseek-api` 新增 `searchBilling`/`fetchBilling`、构造函数 `baseURL`/`auth` 迁移 | **与本插件无关**：本插件从不构造 `DeepSeekSearchApiProvider`/`DeepSeekFetchApiProvider`，它只实现自己的 `opencode-ds` provider 并用 `fetch` 直接请求 OpenCode |
-| 内置 `web` 行的 `searchProvider` 默认值 rc.1→rc.2 从 `deepseek-official` 改为 `deepseek-search-api` | 本插件把该值 pin 成 `opencode-ds`，**行为不变**。但 `overrideOfficial: false` 的委托目标仍是 `deepseek-official`（rc.2 仍随附 `web-search-deepseek` 行注册它，实测可返回真实结果）——注意它已不是 rc.2 的默认官方搜索后端；想让搜索走新的 Search API 请在本插件里保持 `overrideOfficial: true` 并把 `baseURL`/`model` 配成你自己的后端，或在 profile 层改 `web` 行 |
+| 内置 `web` 行的 `searchProvider` 默认值 rc.1→rc.2 从 `deepseek-official` 改为 `deepseek-search-api`（rc.5 起该内置 pin 已删除、改由模型路由自动选择，见 §15） | 本插件把该值 pin 成 `opencode-ds`，**行为不变**。但 `overrideOfficial: false` 的委托目标仍是 `deepseek-official`（rc.2 仍随附 `web-search-deepseek` 行注册它，实测可返回真实结果）——注意它已不是 rc.2 的默认官方搜索后端；想让搜索走新的 Search API 请在本插件里保持 `overrideOfficial: true` 并把 `baseURL`/`model` 配成你自己的后端，或在 profile 层改 `web` 行 |
 | 设置页字段 | 本插件编辑自己的 settings namespace（`web-search-opencode-ds`），与 rc.2 的 `web` 配置页互不影响；rc.2 里两个页面同时存在 |
 
 ### 14.2 回归证据（2026-11-12，DSH 0.2.2-rc.2）
@@ -588,6 +591,67 @@ DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config（下例�
   「插件 → 网页搜索（OpenCode）」页完整渲染 7 个字段：API Key（密文，提示
   "该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
   「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮。
+
+---
+
+## 15. DSH 0.2.2-rc.5 适配说明（2026-11-19）
+
+本节记录 rc.5 唯一与本插件相关的变更：**基础组合不再固定网页搜索提供方**。本插件不受影响，
+改动仅为文档与注释（0.3.7 → 0.3.8），`index.js` / `client.js` / Config schema 未改。
+
+### 15.1 rc.5 变更：基础组合不再 pin `web.searchProvider`
+
+DSH **0.2.2-rc.5 起**，随附基础组合 `packages/bundle/base/cordis.patch.yml` 的 `web` 行只保留
+`fetchProvider: http`，删掉了 `searchProvider: deepseek-search-api`（rc.2–rc.4 都 pin 着这个值；
+rc.1 是 `deepseek-official`）。搜索提供方改由 `dsh-web` 在调用时**按模型提供方路由自动选择**
+（`packages/web/web/src/index.ts` 的 `selectSearchProvider(llmProvider)`）：
+
+| 场景（未显式配置时） | 选中的 provider |
+|---|---|
+| 模型请求路由是 `deepseek-official` / `deepseek-account` | `deepseek-official`（旧版 Messages 搜索，不按次收费、按 token 计费，并追加 `web/deepseek-search-llm-request` 事件） |
+| 其它模型路由，以及不服务于模型请求的搜索 | `deepseek-search-api`（专用 Search API） |
+
+实际选择顺序是**显式配置优先**：`configuredId = config.searchProvider.get() ?? $DSH_WEB_SEARCH_PROVIDER`，
+只要它非空就直接短路（未注册 / 不可用时分别报 `WEB_PROVIDER_CONFIGURED_MISSING` /
+`WEB_PROVIDER_CONFIGURED_UNAVAILABLE`）；只有没配置时才按上表用 `preferredId` 选，再回落
+「唯一可用 / `WEB_PROVIDER_AMBIGUOUS` / `WEB_PROVIDER_UNAVAILABLE`」。设置页「网页搜索提供方」
+下拉框同时新增**自动选择**项：它清除已存选择，等价于「没有配置」。
+
+### 15.2 对本插件的影响：无（显式 pin 仍优先）
+
+本插件的 `cordis.patch.yml` 在自己的 `web` 行补丁里**显式**写死了
+`searchProvider: opencode-ds` + `fetchProvider: http`（见该文件的 `- id: web` 补丁），
+命中上面那条「显式配置优先」的短路分支，所以 rc.5 下：
+
+- `web_search` 仍然走本插件的 `opencode-ds` provider，**行为不变**；
+- `web_fetch` 仍用 `fetchProvider: http`，**行为不变**；
+- 运行时代码未改，本次只升 patch 版本（0.3.7 → 0.3.8）。
+
+### 15.3 前提：别删掉这个显式 pin
+
+rc.5 起，如果删掉 `cordis.patch.yml` 里的 `searchProvider: opencode-ds`，基础组合里也没有兜底值，
+搜索就落到「自动选择」规则：`opencode-ds` **不会被自动选中**（自动规则只会在 `deepseek-official` /
+`deepseek-search-api` 里选），`web_search` 会按上述规则改走官方 provider。也就是说：
+**显式 pin 是本插件被选中的唯一依据**，rc.5 不再有任何「内置默认值恰好被本插件覆盖」的兜底。
+
+### 15.4 委托路径仍然可用
+
+`overrideOfficial: false` 的委托目标是 `deepseek-official`，它仍由基础组合的 `web-search-deepseek`
+行注册（`@deepseek-ai/dsh-web-search-deepseek`，rc.5 未删除该行）；插件在运行时通过
+`ctx.web.searchProviders.get('deepseek-official')` 取它，委托返回结果的路径不变。
+
+### 15.5 核对依据与验证
+
+- **rc.5 源码核对（可复现）**：
+  - `git -C E:\deepseek-harness diff dsh-v0.2.2-rc.3 dsh-v0.2.2-rc.5 -- packages/bundle/base/cordis.patch.yml`
+    → `-        searchProvider: deepseek-search-api`（rc.5 的 `web` 行只剩 `fetchProvider: http`）；
+  - `git -C E:\deepseek-harness show dsh-v0.2.2-rc.5:packages/web/web/src/index.ts`
+    → `DEEPSEEK_MODEL_ROUTES` / `selectSearchProvider` / `resolveProvider` 的 `configuredId` 短路；
+  - 另核对 rc.4 tag 仍含该 pin、rc.5 tag 不含 → 删除发生在 rc.5（提交 `f47a0a2b52`，PR #8707）。
+- **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**（纯文档/注释改动，未改行为代码）。
+- **真实 rc.5 Loader 待验证**（由验证组统一在 rc.5 运行时上跑）：
+  1. `web_search` 仍走 `opencode-ds`（显式 pin 生效）；
+  2. `overrideOfficial: false` 时委托 `deepseek-official` 仍能返回结果。
 
 ---
 
