@@ -1,11 +1,8 @@
 # dsh-web-search-opencode-ds
 
-把 **OpenCode** 注册为 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的网页搜索提供方：
-让模型侧的 `web_search` 工具**经 OpenCode 调用 DeepSeek 官方的服务端搜索**，
-并在 dsh 的 **设置 → 插件** 里提供一张和官方「网页搜索」同款的配置页。
+把 **OpenCode** 注册为 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的网页搜索提供方：让模型侧的 `web_search` 工具**经 OpenCode 调用 DeepSeek 官方的服务端搜索**，并在 dsh 的**设置 → 插件**里提供一张和官方「网页搜索」同款的配置页。
 
-本仓库是一个 dsh **bundle**，而且是**双面**的一个：`index.js` 是 Host 半（注册 `opencode-ds` provider、
-声明 Config schema），`client.js` 是浏览器半（画那张设置页）。两半由同一个包交付。
+本仓库是一个 dsh **bundle**，而且是**双面**的：`index.js` 是 Host 半（注册 `opencode-ds` provider、声明 Config schema），`client.js` 是浏览器半（画那张设置页）。两半由同一个包交付。
 
 名字里没有 `go`：**Go 套餐只是同一个端点家族里的一个选项**（`goMode` 开关），不是这个插件的身份。
 
@@ -13,169 +10,49 @@
 |---|---|
 | 包名 / Loader 行 id | `dsh-web-search-opencode-ds` |
 | provider id | `opencode-ds` |
-| 设置命名空间 | `web-search-opencode-ds`（= Loader 行 id） |
+| 设置命名空间 | `web-search-opencode-ds` |
 | 默认端点 | `https://opencode.ai/zen/go/v1`（Go 套餐，包月） |
 | 备用端点 | `https://opencode.ai/zen/v1`（按量计费） |
 
-> 为什么是 bundle 而不是另写一个搜索后端：在 dsh 里，`ctx.web` 这一层已经定义了
-> `WebSearchProvider` 契约，DeepSeek 的服务端 `web_search` 又是 OpenCode 直接提供的**原生工具**。
-> 插件要做的只是把请求按 OpenCode 的 wire format 发出去、把结果映射回 `WebSearchSource`，
-> 而不是自己去抓网页、拼摘要。
-
----
+- 仓库：<https://github.com/lldwb/dsh-web-search-opencode-ds>（公开，MIT）
+- 要求：Node ≥ 20（见 `package.json` 的 `engines`）；dsh 桌面版（或任何提供 `ctx.web` 与设置服务的部署）
+- 无 CHANGELOG：改动记录见 git 提交历史
 
 ## 加载方式
 
-加载方式：常驻（理由：服务提供方——注册 opencode-ds 搜索 provider 与设置页，供随附 `web_search` 使用，不注册工具）。**当前 profile 未启用**（不在 `dsh.profile.bundles`）
+加载方式：常驻（理由：服务提供方——注册 opencode-ds 搜索 provider 与设置页，供随附 `web_search` 使用，不注册工具）
 
-> 加载方式是 DSH 插件开发的**必答项**（工作区约定 §10.0）：按需的必须有 skill 入口与
-> `onDemand: false` 退路，常驻的必须写理由。这条标记行供人工审阅与将来做门禁。
+它不注册任何模型工具、不占工具 schema：`web_search` 是随附 `dsh-web` 提供的，本插件只是为它提供一个可选的后端与一张配置页。属于「启动类 + 零模型成本」的常驻。
 
-## 1. 实测验证结论
+## 为什么是 bundle 而不是另写一个搜索后端
 
-以下每一条都是**当天对线上端点实打实请求出来的**，不是从文档抄的。分两次：初次验证（2026-10-02）
-与 DSH 升级到 0.2.1-rc.2 之后的复验（2026-10-18）。
+在 dsh 里，`ctx.web` 这一层已经定义了 `WebSearchProvider` 契约，DeepSeek 的服务端 `web_search` 又是 OpenCode 直接提供的**原生工具**。插件要做的只是把请求按 OpenCode 的 wire format 发出去、把结果映射回 `WebSearchSource`，而不是自己去抓网页、拼摘要。
 
-### 1.1 初次验证（2026-10-02）
-
-| 观察 | 结果 |
-|---|---|
-| `POST /zen/go/v1/messages` + `model: deepseek-v4-flash` + `tools:[{type:'web_search_20250305'}]` | **HTTP 200**，返回真实 `web_search_tool_result`（本次 10 条结果） |
-| 同上，但**不带** `x-opencode-session` | **HTTP 400** `{"type":"error","error":{"type":"MissingSessionID",...}}` |
-| 只带 `Authorization: Bearer`（不带 `x-api-key`） | **HTTP 401** `AuthError: Missing API key.` |
-| 只带 `x-api-key` | **HTTP 200** |
-| `GET /zen/go/v1/models` | 200，**43** 个模型，含 `deepseek-v4-flash` |
-| `GET /zen/v1/models` | 200，**85** 个模型，也含 `deepseek-v4-flash` |
-| `POST /zen/v1/messages`（按量计费端点） | **HTTP 402** `Insufficient account funds` —— 路由与鉴权都通，**只是这个账户没有按量余额** |
-| 候选会话创建路径（`/sessions`、`/session`、`/zen/v1/sessions`…） | **全部 404** —— 根本没有「先建会话」这一步 |
-
-### 1.2 复验（2026-10-18，DSH 0.2.1-rc.2）
-
-| 观察 | 结果 |
-|---|---|
-| `GET /zen/go/v1/models` | 200，**37** 个模型（上次 43）；deepseek 只剩 `deepseek-v4.1-flash`、`deepseek-v4-pro` |
-| `GET /zen/v1/models` | 200，**85** 个模型；含 `deepseek-v4-flash`、`deepseek-v4.1-flash`、`deepseek-v4.1-flash-free`、`deepseek-v4-pro` |
-| 专用检索 API：`/search`、`/fetch`、`/tools/search`、`/tools/fetch`、`/web/search`、`/web/fetch`（两条路由 × GET/POST） | **全部 404** —— OpenCode **没有** DeepSeek 那套专用 Search/Fetch API |
-| `v2` 路由家族（`/zen/go/v2/models`、`/zen/v2/models`） | **404** —— 没有版本跃迁 |
-| `/responses`（OpenAI Responses 风格端点） | 端点**存在**且返回 200（`object: "response"`），但**不透传原生 web_search** |
-| `tools:[{type:"web_search"}]` / `web_search_preview` 打到 `/responses` | ❌ `output` 里没有 `web_search_call`，不搜索 |
-| 旧凭据 | 已过期（`This API key has expired.`）；换用有效凭据后重测了下面几行 |
-
-### 1.3 模型与工具的有效性（2026-10-18，有效凭据）
-
-同一提示词、`web_search_20250305`、`max_uses: 5`，只换模型：
-
-| 模型 | 在 `/models` 目录里 | 实际执行服务端搜索 | 结果数 |
-|---|---|---|---|
-| **`deepseek-v4-pro`** | ✅ | ✅ 1–2 次 `server_tool_use` | **10–20** |
-| `deepseek-v4.1-flash` | ✅ | ❌ **0 次**（只 thinking + text，两种提示词都是 0） | 0 |
-| `deepseek-v4-flash` | ❌ 已移除 | ✅ 仍可用 | 20 |
-
-> **这两条反直觉结论是本插件最容易踩的坑，务必记住：**
->
-> 1. **在目录里 ≠ 能用。** `deepseek-v4.1-flash` 明明在 `/models` 里，配它却**完全不会搜索** ——
->    模型只是思考一下就作答，静默失去联网能力（不会报错）。
-> 2. **不在目录里 ≠ 不能用。** `deepseek-v4-flash` 已从 `/models` 移除，却仍能搜出 20 条结果。
->
-> 所以默认值只能取「**目录里有 且 实测能搜**」的交集 —— 只有 `deepseek-v4-pro` 满足。
-> 不能用 `/models` 来推断可用性。
-
-其它同时确认的事实：
-
-- `max_tokens` 给太小会毁掉结论：`1024` 会被 thinking 吃光（`stop_reason: max_tokens`），
-  看起来「搜不到结果」其实根本没轮到工具。测搜索至少给 4096。
-- 按量计费（`/zen/v1`）在无余额账户上对所有模型都返回 **402**。
-- 工具版本阶梯（`web_search_20250415`…`web_search_20251015`、裸 `web_search`）全部返回 200，
-  但响应里是 **`tool_use`（客户端工具）** 而不是 `server_tool_use` —— 说明只有
-  `web_search_20250305` 被识别为原生服务端工具，其它拼写会被当成普通 function tool。
-  因此**不能用「HTTP 200」来判断某个工具版本是否被支持**。
-
-### 1.4 沙箱回归（2026-10-19，`dsh-plugin-devkit`）
-
-按工作区约定（`AGENTS.md` §3），改动插件后要在 devkit 沙箱里做一次**真实 Loader 回归**——单测（mock ctx）看不见"插件到底加载没有、工具在真实注册表里叫不叫得动"。
-
-**环境**：`devkit_sandbox_create`（headless 模板，独立 `DSH_HOME`，模型 overlay 抄自真实 desktop profile），`devkit_sandbox_install` 装本插件，**未改动真实 `~/.dsh`**。
-
-**第 3 步 · 合成校验**（零 token）：`devkit_sandbox_compose` → `exit 0 · 431 行`，命中 4 行：
-
-```
-# == @deepseek-ai/dsh-base, patched by dsh-web-search-opencode-ds
-# == dsh-web-search-opencode-ds
-- id: web-search-opencode-ds
-  name: dsh-web-search-opencode-ds
-```
-
-**第 4 步 · 真实 Loader 回归**：在沙箱里跑一轮 headless 任务，逼模型调用 `web_search` 并逐字回贴原始结果。结果：**成功返回 8 条结果**（标题 + URL，无错误），凭据注入 `DEEPSEEK_API_KEY / OPENCODE_API_KEY / OPENCODE_GO_API_KEY / SUB2API_API_KEY`。
-
-> 这一次回归**直接验证了 §1.3 的修正**：默认模型 `deepseek-v4-pro` 真的会执行服务端搜索。若默认值仍是 `deepseek-v4.1-flash`，回归的表现会是"工具返回 200 但 0 条结果"——即 §1.3 记录的静默失效。
-
-**第 5 步**：`devkit_sandbox_destroy` 已清理，`devkit-sandboxes` 下无残留。
-
-复现（创造模式，需要 `dsh-plugin-devkit`）：
-
-```
-devkit_sandbox_create  { name: "websearch-regress", template: "headless" }
-devkit_sandbox_install { name: "websearch-regress", target: "E:\\dsh-plugins\\dsh-web-search-opencode-ds" }
-devkit_sandbox_compose { name: "websearch-regress", grep: "web-search-opencode" }
-devkit_sandbox_run     { name: "websearch-regress", task: "调用 web_search 查询「DeepSeek Harness 插件」，把原始结果逐字贴出来" }
-devkit_sandbox_destroy { name: "websearch-regress" }
-```
-
-### 由此得到的硬结论
-
-1. **`x-opencode-session` 是强制头，而且由客户端自己生成。** 默认每次搜索新生成一个 UUID v4
-   （`sessionMode: 'per-request'`），`'stable'` 则全程复用同一个。既然没有注册端点、响应里也没有
-   会话 id，「先创建会话」这条分支不存在，不需要实现。
-2. **真正鉴权的是 `x-api-key`。** 最初的需求写的是只用 `Authorization: Bearer`，但那样会被 401 拒绝。
-   本插件**两个头都发**，这样网关两种行为都活得下来。
-3. **两个端点共用一套 wire format。** `goMode` 只改 base URL，请求体、头都不变。
-4. **默认模型取 `deepseek-v4-pro`。** 理由见 §1.3：它是唯一同时满足「目录里有」与「实测能搜索」的。
-5. **按量计费端点要账户有余额。** 本机账户只有 Go 套餐，所以 `/zen/v1` 稳定返回 402。
-   这是**账户事实，不是插件 bug** —— 插件会把 402 单独翻译成「余额不足，要么充值、要么把
-   `goMode` 打回开启」的提示，而不是笼统报一个 HTTP 错误。
-6. **密钥会过期。** 过期时正文是 `This API key has expired.`，去 OpenCode Console 换一把即可；
-   插件会在 401 文案里点名这一点。
-
-### 一个必须知道的限制：响应里没有 snippet
-
-`web_search_result` 条目只带 `title`、`url`、`page_age`，外加一个不透明的 `encrypted_content`，
-**没有摘要文本**。摘要只可能出现在 `text` 块的 `citations[].cited_text` 里。
-
-插件的处理：**有 `cited_text` 就按 url 拼成 `snippet`，没有就干脆不返回 `snippet` 字段**，
-而不是拿标题或正文去伪造一段。搜索结果里 `snippet` 缺失是预期行为。
-
----
-
-## 2. 安装
+## 安装
 
 需要 dsh 桌面版，且 `plugin_manager` 可用。
 
-### 2.1 克隆到本地再安装（推荐，最稳）
+### 1) 克隆到本地再安装（推荐）
 
 ```bash
 git clone https://github.com/lldwb/dsh-web-search-opencode-ds.git
 cd dsh-web-search-opencode-ds
-pnpm install          # 装唯一的运行时依赖 @deepseek-ai/schemastery，见 §10
+pnpm install          # 装唯一的运行时依赖 @deepseek-ai/schemastery
 ```
 
 ```
 plugin_manager { "action": "install_bundle", "target": "<你克隆到的绝对路径>" }
 ```
 
-`plugin_manager` 会把这个包写进当前 profile 的 `dsh.profile.bundles`，并跑一次 pnpm。
-
-### 2.2 为什么必须自己跑一次 `pnpm install`
+### 2) 为什么必须自己跑一次 `pnpm install`
 
 这是本插件与纯配置型 bundle 最大的不同：它**有真实依赖**。
 
-`plugin_manager install_bundle` 对 `link:` 形式的依赖**不会**安装被链包自己的依赖，
-而 dsh 的 `@deepseek-ai/*` 包又**不从 profile 目录解析**（见 §10）。所以
-`@deepseek-ai/schemastery` 必须装进这个包自己的 `node_modules`，Node 才能相对 `index.js` 找到它。
-忘了这一步的症状是启动时报 `Cannot find module '@deepseek-ai/schemastery'`。
+`plugin_manager install_bundle` 对 `link:` 形式的依赖**不会**安装被链包自己的依赖，而 dsh 的 `@deepseek-ai/*` 包又**不从 profile 目录解析**（见「设计说明」）。所以 `@deepseek-ai/schemastery` 必须装进这个包自己的 `node_modules`，Node 才能相对 `index.js` 找到它。忘了这一步的症状是启动时报 `Cannot find module '@deepseek-ai/schemastery'`。
 
 `pnpm-lock.yaml` 已随仓库提交，所以装到的版本是确定的。
 
-### 2.3 本地开发时
+### 3) 本地开发时
 
 profile 用 `link:` 依赖指向工作副本：
 
@@ -185,22 +62,18 @@ profile 用 `link:` 依赖指向工作副本：
 "dsh": { "profile": { "bundles": [ /* … */ "dsh-web-search-opencode-ds" ] } }
 ```
 
-### 2.4 改动如何生效
+### 4) 改动如何生效
 
-- **Host 半 / patch 改动**：`plugin_manager set_bundle` 先 `enabled:false` 再 `enabled:true`，
-  会返回 `"application":"applied"` 并热应用，**不需要重启**。
-  （`install_bundle` 在无变化时返回 `"restart-required"`，那个不会热应用。）
+- **Host 半 / patch 改动**：`plugin_manager set_bundle` 先 `enabled:false` 再 `enabled:true`，会返回 `"application":"applied"` 并热应用，**不需要重启**。（`install_bundle` 在无变化时返回 `"restart-required"`，那个不会热应用。）
 - **Client 半改动**：client 插件的 HMR 接收器是活的，会直接重载；只有需要重建 bundle 时才要刷新页面。
 
----
-
-## 3. 凭据配置
+## 凭据配置
 
 provider 在**每次搜索前**重新解析密钥，所以轮换密钥不需要重启。
 
-### 方式 A：写进 DSH 凭据库（推荐）
+**方式 A：写进 DSH 凭据库（推荐）**
 
-在插件的设置页里填 **API Key** 并保存即可 —— 它走的是 DSH 的 credentials 域，**不会写进设置文件**。
+在插件的设置页里填 **API Key** 并保存即可——它走的是 DSH 的 credentials 域，**不会写进设置文件**。
 
 也可以直接写 `~/.dsh/.credentials.yaml` 的 `refs:`：
 
@@ -209,28 +82,23 @@ refs:
   OPENCODE_API_KEY: sk-...
 ```
 
-**两个引用名都会被尝试**，顺序是：设置里 `apiKeyEnv` 指定的那个 → `OPENCODE_API_KEY` →
-`OPENCODE_GO_API_KEY`。所以旧版本存在 `OPENCODE_GO_API_KEY` 下的密钥**改名后照样能用**。
+**两个引用名都会被尝试**，顺序是：设置里 `apiKeyEnv` 指定的那个 → `OPENCODE_API_KEY` → `OPENCODE_GO_API_KEY`。所以密钥存在 `OPENCODE_GO_API_KEY` 下也照样能用。
 
-### 方式 B：进程环境变量
+**方式 B：进程环境变量**
 
 ```bash
 export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 ```
 
-### 方式 C：插件 config 字面量
+**方式 C：插件 config 字面量**
 
-在 `cordis.patch.yml` 里给这一行加 `apiKey: sk-...`。字面量优先级最高，但会明文落在配置文件里，
-**不建议**。
+在 `cordis.patch.yml` 里给这一行加 `apiKey: sk-...`。字面量优先级最高，但会明文落在配置文件里，**不建议**。
 
----
+## 设置页（GUI）
 
-## 4. 设置页（GUI）
+装好后打开**设置 → 插件**，官方「网页搜索」卡片下面会多出一张**「网页搜索（OpenCode）」**（`plugins.item` 槽位，`order: 41`，官方那张是 40）。
 
-装好后打开 **设置 → 插件**，官方「网页搜索」卡片下面会多出一张
-**「网页搜索（OpenCode）」**（`plugins.item` 槽位，`order: 41`，官方那张是 40）。
-
-页面上有五个控件：
+页面上有这些控件：
 
 | 控件 | 字段 | 说明 |
 |---|---|---|
@@ -238,16 +106,14 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | 模型 | `model` | 决定实际用哪个模型；留空用默认 `deepseek-v4-pro` |
 | 接口地址 | `baseURL` | 留空则**按下面的模式自动决定** |
 | 单次请求最多搜索次数 | `maxUses` | 一次请求在必须作答前最多搜几次 |
-| **覆盖官方网页搜索配置** | `overrideOfficial` | 见 §4.1 |
-| **使用 OpenCode Go 套餐** | `goMode` | 见 §4.2 |
+| **覆盖官方网页搜索配置** | `overrideOfficial` | 见下 |
+| **使用 OpenCode Go 套餐** | `goMode` | 见下 |
 
 页面只在 Host 真的提供了这个命名空间时才挂载，所以没装插件的部署上**看不到任何痕迹**。
 
-> 为什么有「模型」这一格：OpenCode 的模型目录**会换代**。2026-10-18 实测 Go 套餐已下架
-> `deepseek-v4-flash`，旧默认值直接失效。把模型放进 UI，换代时你自己就能改，不必去编辑
-> `cordis.patch.yml`。
+> 为什么有「模型」这一格：OpenCode 的模型目录**会换代**，目录也**不可信**（见「已知限制」）。把模型放进 UI，换代时你自己就能改，不必去编辑 `cordis.patch.yml`。
 
-### 4.1 开关一：是否覆盖官方配置（`overrideOfficial`）
+### 开关一：是否覆盖官方配置（`overrideOfficial`）
 
 这个开关**不需要重启，立即生效**，因为 provider 在每次搜索时才决定怎么走：
 
@@ -256,38 +122,22 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | **开**（默认） | 用本页配置的端点与密钥，自己调 OpenCode |
 | **关** | 把搜索**原样转交**给随附的 `deepseek-official` provider |
 
-「关」的意义是：**官方那套配置（接口地址 `https://api.deepseek.com/anthropic`、`DEEPSEEK_API_KEY`、
-它自己的搜索预算）继续说了算**，本插件完全不插手。
+「关」的意义是：**官方那套配置（接口地址 `https://api.deepseek.com/anthropic`、`DEEPSEEK_API_KEY`、它自己的搜索预算）继续说了算**，本插件完全不插手。
 
-实现方式是在 `search()` 里把请求**委托**给 `ctx.web.searchProviders.get('deepseek-official')`，
-而不是去改 `web.searchProvider`。
+实现方式是在 `search()` 里把请求**委托**给 `ctx.web.searchProviders.get('deepseek-official')`，而不是去改 `web.searchProvider`。委托**不改用户配置**、不需要写 `web` 行、也不会在切换时留下一个指向本插件 id 的持久值。如果 `deepseek-official` 没有挂载，`search()` 会明确报错说明「没有可转交的对象」，而不是静默失败。
 
-> **关于 `web.searchProvider` 的一个重要更新。** 在 DSH 0.2.0 里它是普通 `z.string()`，启动时读一次
-> 就固化，运行时改不动 —— 这是当初选择「委托」的原因之一。**DSH 0.2.1 起它变成了
-> `z.string().volatile()`，并且每次调用时用 `this.config.searchProvider.get()` 重新读取**，
-> 也就是说现在**可以直接热改**了。
->
-> 即便如此，这里仍然保留委托：委托**不改用户配置**、不需要写 `web` 行、也不会在切换时留下
-> 一个指向本插件 id 的持久值。代价是同一个开关有两种实现路径，所以 §12 写了它们与官方设置页开关的
-> 交互。
-
-如果 `deepseek-official` 没有挂载，`search()` 会明确报错说明「没有可转交的对象」，而不是静默失败。
-
-### 4.2 开关二：Go 模式 vs 按量计费（`goMode`）
+### 开关二：Go 模式 vs 按量计费（`goMode`）
 
 | 取值 | 端点 | 计费 |
 |---|---|---|
 | **开**（默认） | `https://opencode.ai/zen/go/v1` | OpenCode Go 包月套餐 |
 | 关 | `https://opencode.ai/zen/v1` | 默认按量计费 API，按次扣费 |
 
-**注意**：按量计费端点需要账户有余额。没有余额时它会回 **HTTP 402**，插件会把这条错误单独
-翻译成「余额不足」的说明。**如果你的账户只有 Go 套餐，就保持这个开关开启。**
+**注意**：按量计费端点需要账户有余额。没有余额时它会回 **HTTP 402**，插件会把这条错误单独翻译成「余额不足」的说明。**如果你的账户只有 Go 套餐，就保持这个开关开启。**
 
 接口地址栏如果填了具体值，**永远优先于**这个开关（留空才是「按模式决定」）。
 
----
-
-## 5. 配置项参考
+## 配置项参考
 
 设置页只能改 `.volatile()` 字段；下表其余项是**加载期配置**，只能写 `cordis.patch.yml`。
 
@@ -296,27 +146,32 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | `apiKey` | — | ✅（secret） | 字面量密钥，优先级最高，不会被表单持久化 |
 | `apiKeyEnv` | `OPENCODE_API_KEY` | ✅（credential-ref） | 凭据引用名 |
 | `baseURL` | 空 | ✅ | 空 = 按 `goMode` 决定 |
-| `model` | `deepseek-v4-pro` | ✅ | Anthropic 格式模型名；唯一「目录内有且实测能搜索」的 |
-| `apiVersion` | `2023-06-01` | ✅ | `anthropic-version` 头 |
-| `maxTokens` | `4096` | ✅ | 生成上限 |
+| `model` | `deepseek-v4-pro` | ✅ | Anthropic 格式模型名；唯一「目录内有且实际能搜索」的 |
+| `apiVersion` | Anthropic Messages 的官方版本号 | ✅ | 写进 `anthropic-version` 头；一般无需修改 |
+| `maxTokens` | `4096` | ✅ | 生成上限。**别再调小**：`1024` 会被 thinking 吃光（`stop_reason: max_tokens`），看起来「搜不到结果」其实根本没轮到工具 |
 | `maxUses` | `5` | ✅ | 服务端搜索次数上限 |
 | `timeoutMs` | `30000` | ✅ | 单次尝试超时 |
 | `includeAnswer` | `false` | ✅ | 是否把模型正文放进 `content` |
-| `overrideOfficial` | `true` | ✅ | 见 §4.1 |
-| `goMode` | `true` | ✅ | 见 §4.2 |
+| `overrideOfficial` | `true` | ✅ | 见「开关一」 |
+| `goMode` | `true` | ✅ | 见「开关二」 |
 | `retries` | `1` | ❌ | 首次之外的重试次数 |
 | `sessionMode` | `per-request` | ❌ | `per-request` \| `stable` |
 | `queryTemplate` | `Perform a web search for the query: {query}` | ❌ | 提示词模板 |
 
 ### 重试策略
 
-重试的状态码：`408 409 425 429 500 502 503 504`。网络错误、超时，以及 **400 `MissingSessionID`**
-也算可重试。**401/403 和 402 不重试** —— 重试不会让密钥变好，也不会让账户有钱。
-退避为 `500ms × 尝试序号`，且可被调用方的 `AbortSignal` 打断。
+重试的状态码：`408 409 425 429 500 502 503 504`。网络错误、超时，以及 **400 `MissingSessionID`** 也算可重试。**401/403 和 402 不重试**——重试不会让密钥变好，也不会让账户有钱。退避为 `500ms × 尝试序号`，且可被调用方的 `AbortSignal` 打断。
 
----
+## 请求契约要点
 
-## 6. DSH 如何选中这个 provider
+- **`x-opencode-session` 是强制头，而且由客户端自己生成**：默认每次搜索新生成一个 UUID v4（`sessionMode: 'per-request'`），`'stable'` 则全程复用同一个。OpenCode **没有**「先创建会话」这一步（候选注册路径全部 404，响应里也没有会话 id），所以不需要实现。缺失该头会得到 **400 `MissingSessionID`**。
+- **真正鉴权的是 `x-api-key`**，只发 `Authorization: Bearer` 会被 401（`Missing API key.`）。插件**两个头都发**，这样网关两种行为都活得下来。
+- **两个端点共用一套 wire format**：`goMode` 只改 base URL，请求体、头都不变。
+- **只有 `web_search_20250305` 被识别为原生服务端工具**。其它拼写（`web_search_20250415` 等版本号阶梯、裸 `web_search`）会被当成普通 function tool：响应里是 `tool_use` 而不是 `server_tool_use`，**HTTP 200 不代表被支持**。
+- **响应里没有摘要**：`web_search_result` 条目只带 `title`、`url`、`page_age`，外加一个不透明的 `encrypted_content`，**没有摘要文本**。摘要只可能出现在 `text` 块的 `citations[].cited_text` 里。插件的处理是：**有 `cited_text` 就按 url 拼成 `snippet`，没有就干脆不返回 `snippet` 字段**，而不是拿标题或正文去伪造一段。所以搜索结果里 `snippet` 缺失是预期行为。
+- **结果不做二次截断**：`maxResults` 的裁剪归 `ctx.web` 这一层管（`capSources`），所以插件的 `truncated` 恒为 `false`，不会把本来正确的长度再砍一刀。
+
+## DSH 如何选中这个 provider
 
 `ctx.web` 在**每次调用时**解析提供方：
 
@@ -327,28 +182,19 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 - 没配 id，多个可用 → `WEB_PROVIDER_AMBIGUOUS`
 - 没配 id，没有可用 → `WEB_PROVIDER_UNAVAILABLE`
 
-本插件的 bundle patch 把 `web.searchProvider` 初始化为 `opencode-ds`，所以**开箱即用就是它**；
-「用不用官方配置」再交给 `overrideOfficial` 决定。
+本插件的 bundle patch 把 `web.searchProvider` 初始化为 `opencode-ds`（同时保留 `fetchProvider: http`），所以**开箱即用就是它**；「用不用官方配置」再交给 `overrideOfficial` 决定。
 
-> 注意：DSH 0.2.1 起 `searchProvider` 是 `.volatile()`，**运行时可以改**。所以这个固定值只是
-> **初始值**，不是不可动摇的恒等式 —— 用户（或官方网页搜索页的开关）随时可能把它改掉。
-> 见 §12.1。
+**显式 pin 是本插件被选中的唯一依据。** 基础组合不再为 `web.searchProvider` 提供兜底值，`opencode-ds` 也不会出现在「按模型路由自动选择」的候选里（自动规则只在官方 provider 之间选）。所以：
 
-> ⚠️ **id 定向 patch 会整体替换该行的 `config`，不做深合并。** 随附的 `web` 行目前只声明了
-> `searchProvider` / `fetchProvider` 两个键，所以只写 `searchProvider` 不会丢东西。但如果更高
-> 优先级的层（比如 profile 自己的 `cordis.patch.yml`）给 `web` 行加了 `fetchProvider`，
-> 那一层必须**同时重写两个字段**。
+- 别删掉 `cordis.patch.yml` 里那行 `searchProvider: opencode-ds`；
+- `web.searchProvider` 是 volatile 字段，**运行时可以被改**（用户、或官方网页搜索页的开关），这个固定值只是**初始值**；
+- `DSH_WEB_SEARCH_PROVIDER=opencode-ds` 与配置里的 `searchProvider` **等价**（是同一份配置的兜底，不是隐藏的优先级链）。
+
+> ⚠️ **id 定向 patch 会整体替换该行的 `config`，不做深合并。** 内置 `web` 行自己带 `config`（`fetchProvider: http` 始终在），所以本 bundle 把**两个字段都重述一遍**。只写 `searchProvider` 会把 `fetchProvider` 抹掉——而 `ctx.web` 在未配置 fetchProvider 时走「唯一可用提供方」规则，`http` 与 `deepseek-fetch-api`（有 `DEEPSEEK_API_KEY` 时可用）同时可用就抛 `WEB_PROVIDER_AMBIGUOUS`，`web_fetch` 直接不可用。如果你自己的 `cordis.patch.yml` 里也有 `web` 行，它层级更高、会**整体覆盖**本 bundle 的值，此时请把**两个字段都**写进你自己的那一行，或删掉自己的行交给本 bundle 管。
 
 层序：所有 bundle patch → profile 自己的 `cordis.patch.yml` → `--patch` 覆盖。
-所以 profile 里若也写了 `web` 行，会覆盖本 bundle 的固定值。
 
-### 环境变量覆盖
-
-`DSH_WEB_SEARCH_PROVIDER=opencode-ds` 与配置里的 `searchProvider` **等价**（不是隐藏的优先级链）。
-
----
-
-## 7. 回退到随附的 `deepseek-official`
+## 回退到随附的 `deepseek-official`
 
 三种方式，任选一种：
 
@@ -356,9 +202,7 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 2. 把 profile 的 `cordis.patch.yml` 里加上 `web` 行并把 `searchProvider` 改成 `deepseek-official`。
 3. `plugin_manager set_bundle dsh-web-search-opencode-ds enabled:false` 整个停用。
 
----
-
-## 8. 自检
+## 自检
 
 ### 端点验证脚本
 
@@ -375,8 +219,7 @@ $env:OPENCODE_API_KEY = 'sk-...'
 .\scripts\probe-opencode.ps1 "你的查询" metered
 ```
 
-脚本会断言 `200 / 400 / 401` 三种情形，再检查响应里有没有 `web_search_tool_result`、
-`server_tool_use`、`usage.server_tool_use.web_search_requests`。
+脚本会断言 `200 / 400 / 401` 三种情形，再检查响应里有没有 `web_search_tool_result`、`server_tool_use`、`usage.server_tool_use.web_search_requests`。
 
 - 退出码 `0` = 全部符合预期（按量模式下的 **402 会单独标成 `UNFUNDED(402)` 并仍然退 0**）
 - `1` = 有偏差
@@ -385,67 +228,72 @@ $env:OPENCODE_API_KEY = 'sk-...'
 ### 单元测试（不需要网络）
 
 ```bash
-node --test test/parse.test.mjs      # 40 个用例
+node --test test/parse.test.mjs      # 解析与映射用例
+node --test "test/**/*.test.mjs"     # 全部
 ```
 
 ### 确认某次搜索到底是谁服务的
 
-随附的 `deepseek-official` 在派发前会往会话里追加 `web/deepseek-search-llm-request` 事件，
-**本插件从不写这个事件**。所以在会话日志里
-（`~/.dsh/sessions/<slug>/<sessionId>/session.v4.jsonl.zstd`，注意是**多帧 zstd**，
-每个 append 一帧，必须按帧魔数 `28 B5 2F FD` 切开分别解压）：
+随附的 `deepseek-official` 在派发前会往会话里追加 `web/deepseek-search-llm-request` 事件，**本插件从不写这个事件**。所以在会话日志里（`~/.dsh/sessions/<slug>/<sessionId>/session.v4.jsonl.zstd`，注意是**多帧 zstd**，每个 append 一帧，必须按帧魔数 `28 B5 2F FD` 切开分别解压）：
 
 > 搜索产生了结果，而这次调用**没有**对应的 `web/deepseek-search-llm-request` ⇒ 就是本插件服务的。
 
----
-
-## 9. 故障排查
+## 故障排查
 
 | 现象 | 原因与处理 |
 |---|---|
 | 页面压根不出现 | Host 没提供命名空间。`Config.listConfigs` 里该行 `status` 必须是 `"schema"`（不是 `"absent"`）。`"absent"` 意味着插件没声明 Config。 |
 | 页面出现但插件列表里没有 | Loader 没重读 profile。`set_bundle` 关再开一次。 |
-| `WEB_PROVIDER_CONFIGURED_MISSING` | 固定了 `opencode-ds` 但插件没注册上 —— 看 Host 日志里插件是否加载失败。 |
+| `WEB_PROVIDER_CONFIGURED_MISSING` | 固定了 `opencode-ds` 但插件没注册上——看 Host 日志里插件是否加载失败。 |
 | 401 | 密钥不对，或者**用错了模式**（Go 套餐的密钥不等于按量计费可用）。 |
 | 402 | 按量计费端点余额不足。充值，或把 `goMode` 打回开启。 |
 | 400 `MissingSessionID` | `x-opencode-session` 被中途剥掉了。插件每次都生成，看到这个说明有代理在改请求。 |
-| 抓不到 `snippet` | 预期行为，见 §1。响应里本来就没有摘要。 |
-| `Cannot find module '@deepseek-ai/schemastery'` | 插件目录里没跑过 `pnpm install`，见 §2。 |
+| 抓不到 `snippet` | 预期行为，见「请求契约要点」。响应里本来就没有摘要。 |
+| `Cannot find module '@deepseek-ai/schemastery'` | 插件目录里没跑过 `pnpm install`。 |
 
----
+## 已知限制
 
-## 10. 设计说明
+### 与官方「网页搜索」设置页的交互
+
+官方网页搜索设置页有一个**「使用 Search API」开关**，它**直接写 `web` 行的 `searchProvider` / `fetchProvider`**：
+
+| 开关位置 | 写入的 `searchProvider` | 写入的 `fetchProvider` |
+|---|---|---|
+| 关（Messages 路径） | `deepseek-official` | `http` |
+| 开（Search API 路径） | `deepseek-search-api` | `deepseek-fetch-api` |
+
+这带来两个后果：
+
+1. **本插件的 pin 会被这个开关覆盖。** 开关的判定是 `web.searchProvider === "deepseek-search-api"`。本插件把该值设为 `opencode-ds`，所以官方页面会把它显示成「关」；你在那个页面上拨动一次开关，`searchProvider` 就会被改成 `deepseek-*`，**本插件随即不再被选中**（搜索会改走官方后端，而不是报错）。
+   - 想切回本插件：把 `web.searchProvider` 改回 `opencode-ds`（设置 → 插件里编辑，或写 profile 的 `cordis.patch.yml`）。
+   - 只想临时用官方配置、又不放弃本插件：用本插件的 **`overrideOfficial` 关掉**，它会把请求委托给 `deepseek-official`，且不改 `web` 行。
+2. **「使用 Search API」这个开关对本插件无效。** 它选的是 DSH 的 `dsh-web-deepseek-api` 后端——那是 **DeepSeek 官方**的专用 Search/Fetch API（`https://api.deepseek.com/v1/tools` + `/search`、`/fetch`，不走完整模型轮次）。**OpenCode 没有等价的专用 API**（`/search`、`/fetch`、`/tools/search`、`/web/search` 等候选路径全部 404），所以本插件只能用 Messages + `web_search_20250305` 这一条路。
+
+### 其它限制
+
+- **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。处理办法见「DSH 如何选中这个 provider」里的说明。
+- **响应里没有摘要**：插件不会伪造摘要，所以结果里 `snippet` 缺失是预期行为。想要摘要就把 `includeAnswer` 打开，模型正文会作为 `WebSearchResult.content` 返回。
+- **按量计费端点要余额**：`goMode: false` 走 `/zen/v1`，账户没钱会返回 **HTTP 402**。只有 Go 套餐的账号请保持 `goMode` 开启。
+- **模型会换代，且目录不可信**：目录里有不代表会搜索（`deepseek-v4.1-flash` 在 `/models` 里但完全不执行搜索，静默失去联网能力、不报错），不在目录里也可能仍能用（`deepseek-v4-flash` 已被 `/models` 移除却仍可搜索）。所以默认值只能取「**目录里有 且 实际能搜**」的交集——只有 `deepseek-v4-pro` 满足。换模型后请确认搜索真的发生了（看结果里有没有 `Sources`）；插件不预先校验，写错的模型要到实际调用才报错，但错误信息会点名当前模型、当前端点，并让你去查该端点的 `/models`。
+- **密钥会过期**：过期正文是 `This API key has expired.`，去 OpenCode Console 换一把即可；插件会在 401 文案里点名这一点。
+- **Go / 按量是两个独立权益**：同一个 OpenCode 账号上，Go 套餐的密钥不等于按量计费可用，反之亦然。
+- **端点行为、模型目录都可能随时变动**：以你的实际请求为准，用上面的探针脚本自查。
+
+## 设计说明
 
 **为什么除了 schemastery 之外必须是零 `@deepseek-ai/*` 依赖。**
-DSH 自己的包**不从 profile 目录解析**（`@deepseek-ai/dsh-web`、`@deepseek-ai/dsh-credentials`
-在 profile 下都是 `MODULE_NOT_FOUND`），所以 profile 装的插件 import 不到它们。
-`@deepseek-ai/schemastery` 是**公开发布的 MIT 包**，装进本包自己的 `node_modules`，
-是 Node 相对本文件唯一能解析到的那个 —— 而声明 `Config` 又必须要它。
+DSH 自己的包**不从 profile 目录解析**（`@deepseek-ai/dsh-web`、`@deepseek-ai/dsh-credentials` 在 profile 下都是 `MODULE_NOT_FOUND`），所以 profile 装的插件 import 不到它们。`@deepseek-ai/schemastery` 是**公开发布的 MIT 包**，装进本包自己的 `node_modules`，是 Node 相对本文件唯一能解析到的那个——而声明 `Config` 又必须要它。
 
 **为什么 `Config` 用 `.volatile()`。**
-DSH 的设置服务只把**活跃 profile 条目上的 volatile 字段**投影成表单，并通过 profile 的 Cordis patch
-持久化。没有 Config → 没有命名空间 → 设置页无从挂载；字段不 volatile → 表单里看不到。
-所以「能不能配」完全由 schema 上的 `.volatile()` 决定。
+DSH 的设置服务只把**活跃 profile 条目上的 volatile 字段**投影成表单，并通过 profile 的 Cordis patch 持久化。没有 Config → 没有命名空间 → 设置页无从挂载；字段不 volatile → 表单里看不到。所以「能不能配」完全由 schema 上的 `.volatile()` 决定。
 
 **为什么 `configure({ auto: false })`。**
-自带页面的插件要显式关掉 schema 自动生成页面。它注册在
-`ctx.inject(['settings'], …)` 的可选子级里 —— 这样没有 settings 服务的 profile 也能正常跑，
-而且策略绑在插件自己的 fiber 上，Settings 服务迟到或换实例也会采用。
+自带页面的插件要显式关掉 schema 自动生成页面。它注册在 `ctx.inject(['settings'], …)` 的可选子级里——这样没有 settings 服务的 profile 也能正常跑，而且策略绑在插件自己的 fiber 上，Settings 服务迟到或换实例也会采用。
 
 **为什么「覆盖官方配置」用委托而不是改配置。**
-最初（DSH 0.2.0）`web.searchProvider` 不是 volatile、构造时固化、运行时改不动，改成别的 id 还会在
-两个 provider 都可用时撞上 `WEB_PROVIDER_AMBIGUOUS`，所以委托是唯一可行解。**DSH 0.2.1 起它变成
-了 volatile（每次调用重新读取），改配置这条路已可行**，但委托仍然更好：它不动用户的 `web` 行、
-切换后不留下一个指向本插件 id 的持久值，而且「谁在服务」这件事始终由本插件自己的开关决定。
-代价是要在 §12.1 里把两条路径的交互讲清楚。
+改 `web.searchProvider` 这条路虽然现在可行（该字段是 volatile、每次调用重新读取），但委托仍然更好：它不动用户的 `web` 行、切换后不留下一个指向本插件 id 的持久值，而且「谁在服务」这件事始终由本插件自己的开关决定。代价是要在「已知限制」里把两条路径的交互讲清楚。
 
-**为什么结果不二次截断。**
-`maxResults` 的裁剪归 `ctx.web` 这一层管（`capSources`），所以插件的 `truncated` 恒为 `false`，
-不会把本来正确的长度再砍一刀。
-
----
-
-## 11. 参考
+## 参考
 
 - OpenCode Go 文档：<https://opencode.ai/docs/go/>
 - OpenCode Zen 文档：<https://opencode.ai/docs/zen/>
@@ -453,216 +301,7 @@ DSH 的设置服务只把**活跃 profile 条目上的 volatile 字段**投影�
 - DSH `ctx.web` 服务契约（`WebSearchProvider` / `WebSearchSource`）
 - DSH 设置子系统：`@deepseek-ai/dsh-settings`、`@deepseek-ai/dsh-client-ui-settings-web-search`
 
----
+## 仓库与许可
 
-## 12. 已知限制
-
-### 12.1 与官方「网页搜索」设置页的交互（DSH 0.2.1 起）
-
-DSH 0.2.1 重写了官方网页搜索设置页：它现在多了一个 **「使用 Search API」开关**，而这个开关
-**直接写 `web` 行的 `searchProvider` / `fetchProvider`**：
-
-| 开关位置 | 写入的 `searchProvider` | 写入的 `fetchProvider` |
-|---|---|---|
-| 关（Messages 路径） | `deepseek-official` | `http` |
-| 开（Search API 路径） | `deepseek-search-api` | `deepseek-fetch-api` |
-
-这带来两个后果，务必知道：
-
-1. **本插件的 pin 会被这个开关覆盖。** 开关的判定是
-   `web.searchProvider === "deepseek-search-api"`。本插件把该值设为 `opencode-ds`，所以官方页面
-   会把它显示成「关」；你在那个页面上拨动一次开关，`searchProvider` 就会被改成 `deepseek-*`，
-   **本插件随即不再被选中**（搜索会改走官方后端，而不是报错）。
-   - 想切回本插件：把 `web.searchProvider` 改回 `opencode-ds`（设置 → 插件里编辑，或写
-     profile 的 `cordis.patch.yml）。
-   - 只想临时用官方配置、又不放弃本插件：用本插件的 **`overrideOfficial` 关掉**（§4.1），
-     它会把请求委托给 `deepseek-official`，且不改 `web` 行。
-2. **「使用 Search API」这个开关对本插件无效。** 它选的是 DSH 新加的
-   `dsh-web-deepseek-api` 后端 —— 那是 **DeepSeek 官方**的专用 Search/Fetch API
-   （`https://api.deepseek.com/v1/tools` + `/search`、`/fetch`，不走完整模型轮次）。
-   **OpenCode 没有等价的专用 API**：§1.2 里所有候选路径实测都是 404。所以本插件只能用
-   Messages + `web_search_20250305` 这一条路。
-
-### 12.2 其它限制
-
-- **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。
-  **DSH 0.2.2 起内置 `web` 行自己就带 `config`**（`fetchProvider: http` 始终在；`searchProvider`
-  在 0.2.2-rc.1 是 `deepseek-official`、rc.2–rc.4 是 `deepseek-search-api`），
-  **0.2.2-rc.5 起基础组合已不再 pin `web.searchProvider`**（改由 `dsh-web` 按模型路由自动选择，见 §15），
-  所以本 bundle 仍把两个字段都重述一遍（`searchProvider: opencode-ds` + `fetchProvider: http`，见 §13）；
-  **本插件始终显式 pin，rc.5 下行为不变**。
-  只写 `searchProvider` 会把 `fetchProvider` 抹掉，而 `ctx.web` 在未配置 fetchProvider 时会走「唯一可用提供方」
-  规则 —— `http` 与 `deepseek-fetch-api`（有 `DEEPSEEK_API_KEY` 时可用）同时可用就抛 `WEB_PROVIDER_AMBIGUOUS`，
-  `web_fetch` 直接不可用。如果你自己的 `cordis.patch.yml` 里也有 `web` 行，它层级更高，会**整体覆盖**本 bundle
-  的值；此时请把**两个字段都**写进你自己的那一行，或删掉自己的行交给本 bundle 管。
-- **响应里没有摘要**：OpenCode 返回的 `web_search_result` 只有 `title` / `url` / `page_age`，
-  没有 `snippet`。插件不会伪造摘要，所以结果里 `snippet` 缺失是预期行为（见 §1）。
-  想要摘要就把 `includeAnswer` 打开，模型正文会作为 `WebSearchResult.content` 返回。
-- **按量计费端点要余额**：`goMode: false` 走 `/zen/v1`，账户没钱会返回 **HTTP 402**。
-  只有 Go 套餐的账号请保持 `goMode` 开启。
-- **模型会换代，且目录不可信**：目录里有不代表会搜索（`deepseek-v4.1-flash` 就不搜），不在目录里也可能仍能用（`deepseek-v4-flash` 仍可）。换模型后请确认搜索真的发生了（看结果里有没有 `Sources`）。
-  插件不预先校验，写错的模型要到实际调用才报错 —— 但那时错误信息会点名当前模型、当前端点，
-  并让你去查该端点的 `/models`。日常改模型用设置页的「模型」一格即可。
-- **密钥会过期**：过期正文是 `This API key has expired.`，去 OpenCode Console 换一把。
-- **Go / 按量是两个独立权益**：同一个 OpenCode 账号上，Go 套餐的密钥不等于按量计费可用，反之亦然。
-- 端点行为、模型目录都可能随时变动；§1 的实测结论标注了日期，请以你的实际请求为准。
-
----
-
-## 13. DSH 0.2.2-rc.1 适配与回归（2026-11-06）
-
-### 13.1 修了什么：`web` 行的 `fetchProvider` 被整块替换抹掉
-
-DSH **0.2.2 起**随附 `dsh-base` 的内置 `web` 行开始带 config（下例是 0.2.2-rc.1 的默认值；
-**rc.2 把 `searchProvider` 改成了 `deepseek-search-api`**；**0.2.2-rc.5 起基础组合已删除这个
-`searchProvider` pin、只保留 `fetchProvider: http`，下例仅作历史对照，见 §15**）：
-
-```yaml
-- id: web
-  name: '@deepseek-ai/dsh-web'
-  config:
-    searchProvider: deepseek-official   # rc.2–rc.4 为 deepseek-search-api；rc.5 起该 pin 已删除（见 §15）
-    fetchProvider: http
-```
-
-而 Loader 的 id 定向补丁是**整块替换** `config`、不做深合并。本插件的 `cordis.patch.yml` 此前只重述
-`searchProvider: opencode-ds`（当时的注释写着「内置 `web` 行目前不带 config」——在 0.2.0/0.2.1 成立，**0.2.2 起不再成立**），
-于是 `fetchProvider` 变成未配置。`ctx.web` 的选择规则是：没有配置 id 时，若**唯一**可用提供方就选它，
-多个可用则抛 `WEB_PROVIDER_AMBIGUOUS`。默认注册的 fetch 提供方有两个：
-
-| 提供方 id | 注册者 | 何时可用 |
-|---|---|---|
-| `http` | `@deepseek-ai/dsh-web-fetch-http` | 始终 |
-| `deepseek-fetch-api` | `@deepseek-ai/dsh-web-deepseek-api` | `DEEPSEEK_API_KEY` 可解析且 baseURL 合法时 |
-
-所以只要用户在凭据库里配了 `DEEPSEEK_API_KEY`（绝大多数人都会，它是模型凭据），`web_fetch` 就会以
-`WEB_PROVIDER_AMBIGUOUS` 失败 —— 而且因为 0.2.2 的 `tool-web` 用 `fetchReady()` 决定是否挂载工具，
-而 `fetchReady()` 在选择失败时**返回 true**（"失败由调用方报告"），工具照样出现、调用时才炸，排查成本高。
-
-**修复**：在 `cordis.patch.yml` 的 `web` 行里把 `fetchProvider: http` 一起重述（与 `dsh-base` 默认一致），
-两个字段同时写、顺序无关。这样搜索仍固定走 `opencode-ds`，抓取保持内置默认的匿名 HTTP 实现。
-
-### 13.2 为什么不用别的方案
-
-- **不写 `web` 行、靠环境变量 `DSH_WEB_SEARCH_PROVIDER`**：环境变量是 `config.searchProvider.get() ?? env`
-  的后备，不是绑定；而本插件要的就是"开箱即用是本插件"，不能要求用户配环境变量。
-- **把 `fetchProvider` 留空**：即上面的 bug。
-- **在 `index.js` 运行时改 `web` 行的 config**：违反层级约定（bundle 层低于 profile 层），且改不回来。
-
-### 13.3 回归证据（2026-11-06，DSH 0.2.2-rc.1）
-
-- **合成树**（devkit web 沙箱 `ui-websearch`，`dsh --profile … --dump-config`）：`web` 行同时含
-  `searchProvider: opencode-ds` 与 `fetchProvider: http`；插件行 `- id: web-search-opencode-ds` 在树里。
-- **Host 侧真实调用**（devkit headless 沙箱 `ws-regress`，凭据注入 `OPENCODE_API_KEY` 等）：
-  - `web_fetch https://example.com` → **成功**：`Fetched https://example.com/ (HTTP 200)` + 页面正文
-    （证明 `fetchProvider: http` 生效、不再 ambiguity）；
-  - `web_search` → 请求**真的发到了** OpenCode Go 端点并被插件自己的错误格式化返回：
-    `Error: OpenCode API 错误（HTTP 429）: Go usage limit exceeded`（证明 provider 已注册、被选中、
-    请求构造与响应映射路径都跑通；429 是上游套餐用量超限，属外部配额问题，不是插件/DSH 缺陷）。
-- **设置页 UI 回归**：`dsh-web-search-opencode-ds@0.3.4 is loaded: its client half is in the page's manifest`
-  （引号内是沙箱当时的实际输出，当时 link 的版本是 0.3.4；本次改动只有 `cordis.patch.yml` 的 `fetchProvider` 与文档）；
-  点「插件 → 网页搜索（OpenCode）」（设置页卡片标题用 `settings.title`，包卡片是 `meta.title`）后设置页完整渲染：
-  API Key（密文，显示"该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
-  「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮；**控制台 0 错误**。
-- **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**。
-
----
-
-## 14. DSH 0.2.2-rc.2 适配与回归（2026-11-12）
-
-### 14.1 rc.2 破坏面核对：本插件不受影响
-
-| rc.2 变更 | 对本插件的影响 |
-|---|---|
-| `WebSearchProvider` 契约（`packages/web/web/src/types.ts`） | **未变**：`id` + `available()` + `search()` 仍是必需；rc.2 只新增了可选 `title` / `description` / `ready()` 与 `web/providers-changed` 事件、`listProviders()` Remote 方法。本插件不实现这些可选字段（缺省即"就绪"），注册与派发路径不变 |
-| `web` 行 config | `searchProvider` / `fetchProvider` **仍在**（`WebRuntimeConfig` 未改），本 bundle 的固定绑定继续生效（rc.2 事实；**rc.5 起基础组合已删除内置 `searchProvider` pin，见 §15**） |
-| `web-search-billing`：`web-deepseek-api` 新增 `searchBilling`/`fetchBilling`、构造函数 `baseURL`/`auth` 迁移 | **与本插件无关**：本插件从不构造 `DeepSeekSearchApiProvider`/`DeepSeekFetchApiProvider`，它只实现自己的 `opencode-ds` provider 并用 `fetch` 直接请求 OpenCode |
-| 内置 `web` 行的 `searchProvider` 默认值 rc.1→rc.2 从 `deepseek-official` 改为 `deepseek-search-api`（rc.5 起该内置 pin 已删除、改由模型路由自动选择，见 §15） | 本插件把该值 pin 成 `opencode-ds`，**行为不变**。但 `overrideOfficial: false` 的委托目标仍是 `deepseek-official`（rc.2 仍随附 `web-search-deepseek` 行注册它，实测可返回真实结果）——注意它已不是 rc.2 的默认官方搜索后端；想让搜索走新的 Search API 请在本插件里保持 `overrideOfficial: true` 并把 `baseURL`/`model` 配成你自己的后端，或在 profile 层改 `web` 行 |
-| 设置页字段 | 本插件编辑自己的 settings namespace（`web-search-opencode-ds`），与 rc.2 的 `web` 配置页互不影响；rc.2 里两个页面同时存在 |
-
-### 14.2 回归证据（2026-11-12，DSH 0.2.2-rc.2）
-
-- **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**。
-- **合成树**（devkit headless 沙箱）：`web` 行由 `dsh-web-search-opencode-ds` patch 后含
-  `searchProvider: opencode-ds` 与 `fetchProvider: http`；插件行 `- id: web-search-opencode-ds` 在树里。
-- **Host 侧真实调用**（headless 沙箱，注入 `OPENCODE_API_KEY`）：`web_search` 请求**真的发到**
-  `https://opencode.ai/zen/go/v1/messages`，返回本插件格式化的
-  `Error: OpenCode API 错误（HTTP 429）: OpenCode Go usage limit reached` —— provider 已注册、
-  被选中、请求构造与错误映射路径都跑通；429 是上游 Go 套餐配额，不是插件/DSH 缺陷。
-- **委托路径**（临时 patch 把本插件 `overrideOfficial` 设为 `false`）：`web_search` 委托给随附的
-  `deepseek-official` 并返回 **10 条真实来源**（DeepSeek Harness 相关页面）——rc.2 里
-  `deepseek-official` 仍存在且委托可用。
-- **设置页 UI 回归**（devkit web 沙箱 + headless Chrome）：
-  `dsh-web-search-opencode-ds@0.3.5 is loaded: its client half is in the page's manifest`
-  （沙箱当时 link 的是 0.3.5；本次改动只有文档与注释，运行时代码未变），控制台 0 错误；
-  「插件 → 网页搜索（OpenCode）」页完整渲染 7 个字段：API Key（密文，提示
-  "该引用下未找到密钥"）、接口地址、模型 `deepseek-v4-pro`、单次请求最多搜索次数 `5`、
-  「覆盖官方网页搜索配置」「使用 OpenCode Go 套餐」两个开关、保存按钮。
-
----
-
-## 15. DSH 0.2.2-rc.5 适配说明（2026-11-19）
-
-本节记录 rc.5 唯一与本插件相关的变更：**基础组合不再固定网页搜索提供方**。本插件不受影响，
-改动仅为文档与注释（0.3.7 → 0.3.8），`index.js` / `client.js` / Config schema 未改。
-
-### 15.1 rc.5 变更：基础组合不再 pin `web.searchProvider`
-
-DSH **0.2.2-rc.5 起**，随附基础组合 `packages/bundle/base/cordis.patch.yml` 的 `web` 行只保留
-`fetchProvider: http`，删掉了 `searchProvider: deepseek-search-api`（rc.2–rc.4 都 pin 着这个值；
-rc.1 是 `deepseek-official`）。搜索提供方改由 `dsh-web` 在调用时**按模型提供方路由自动选择**
-（`packages/web/web/src/index.ts` 的 `selectSearchProvider(llmProvider)`）：
-
-| 场景（未显式配置时） | 选中的 provider |
-|---|---|
-| 模型请求路由是 `deepseek-official` / `deepseek-account` | `deepseek-official`（旧版 Messages 搜索，不按次收费、按 token 计费，并追加 `web/deepseek-search-llm-request` 事件） |
-| 其它模型路由，以及不服务于模型请求的搜索 | `deepseek-search-api`（专用 Search API） |
-
-实际选择顺序是**显式配置优先**：`configuredId = config.searchProvider.get() ?? $DSH_WEB_SEARCH_PROVIDER`，
-只要它非空就直接短路（未注册 / 不可用时分别报 `WEB_PROVIDER_CONFIGURED_MISSING` /
-`WEB_PROVIDER_CONFIGURED_UNAVAILABLE`）；只有没配置时才按上表用 `preferredId` 选，再回落
-「唯一可用 / `WEB_PROVIDER_AMBIGUOUS` / `WEB_PROVIDER_UNAVAILABLE`」。设置页「网页搜索提供方」
-下拉框同时新增**自动选择**项：它清除已存选择，等价于「没有配置」。
-
-### 15.2 对本插件的影响：无（显式 pin 仍优先）
-
-本插件的 `cordis.patch.yml` 在自己的 `web` 行补丁里**显式**写死了
-`searchProvider: opencode-ds` + `fetchProvider: http`（见该文件的 `- id: web` 补丁），
-命中上面那条「显式配置优先」的短路分支，所以 rc.5 下：
-
-- `web_search` 仍然走本插件的 `opencode-ds` provider，**行为不变**；
-- `web_fetch` 仍用 `fetchProvider: http`，**行为不变**；
-- 运行时代码未改，本次只升 patch 版本（0.3.7 → 0.3.8）。
-
-### 15.3 前提：别删掉这个显式 pin
-
-rc.5 起，如果删掉 `cordis.patch.yml` 里的 `searchProvider: opencode-ds`，基础组合里也没有兜底值，
-搜索就落到「自动选择」规则：`opencode-ds` **不会被自动选中**（自动规则只会在 `deepseek-official` /
-`deepseek-search-api` 里选），`web_search` 会按上述规则改走官方 provider。也就是说：
-**显式 pin 是本插件被选中的唯一依据**，rc.5 不再有任何「内置默认值恰好被本插件覆盖」的兜底。
-
-### 15.4 委托路径仍然可用
-
-`overrideOfficial: false` 的委托目标是 `deepseek-official`，它仍由基础组合的 `web-search-deepseek`
-行注册（`@deepseek-ai/dsh-web-search-deepseek`，rc.5 未删除该行）；插件在运行时通过
-`ctx.web.searchProviders.get('deepseek-official')` 取它，委托返回结果的路径不变。
-
-### 15.5 核对依据与验证
-
-- **rc.5 源码核对（可复现）**：
-  - `git -C E:\deepseek-harness diff dsh-v0.2.2-rc.3 dsh-v0.2.2-rc.5 -- packages/bundle/base/cordis.patch.yml`
-    → `-        searchProvider: deepseek-search-api`（rc.5 的 `web` 行只剩 `fetchProvider: http`）；
-  - `git -C E:\deepseek-harness show dsh-v0.2.2-rc.5:packages/web/web/src/index.ts`
-    → `DEEPSEEK_MODEL_ROUTES` / `selectSearchProvider` / `resolveProvider` 的 `configuredId` 短路；
-  - 另核对 rc.4 tag 仍含该 pin、rc.5 tag 不含 → 删除发生在 rc.5（提交 `f47a0a2b52`，PR #8707）。
-- **离线单测**：`node --test "test/**/*.test.mjs"` → **42 / 42 通过**（纯文档/注释改动，未改行为代码）。
-- **真实 rc.5 Loader 待验证**（由验证组统一在 rc.5 运行时上跑）：
-  1. `web_search` 仍走 `opencode-ds`（显式 pin 生效）；
-  2. `overrideOfficial: false` 时委托 `deepseek-official` 仍能返回结果。
-
----
-
-## License
-
-MIT — 见 [LICENSE](./LICENSE)。
-
+- 仓库：<https://github.com/lldwb/dsh-web-search-opencode-ds>（公开）
+- 许可证：MIT，见 [LICENSE](./LICENSE)
