@@ -146,7 +146,7 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | `apiKey` | — | ✅（secret） | 字面量密钥，优先级最高，不会被表单持久化 |
 | `apiKeyEnv` | `OPENCODE_API_KEY` | ✅（credential-ref） | 凭据引用名 |
 | `baseURL` | 空 | ✅ | 空 = 按 `goMode` 决定 |
-| `model` | `deepseek-v4-pro` | ✅ | Anthropic 格式模型名；唯一「目录内有且实际能搜索」的 |
+| `model` | `deepseek-v4-pro` | ✅ | Anthropic 格式模型名；换模型前请读「已知限制」里「模型会换代，且目录不可信」那一条 |
 | `apiVersion` | `2023-06-01` | ✅ | 写进 `anthropic-version` 头；一般无需修改 |
 | `maxTokens` | `4096` | ✅ | 生成上限。**别再调小**：`1024` 会被 thinking 吃光（`stop_reason: max_tokens`），看起来「搜不到结果」其实根本没轮到工具 |
 | `maxUses` | `5` | ✅ | 服务端搜索次数上限 |
@@ -274,7 +274,7 @@ node --test "test/**/*.test.mjs"     # 全部
 - **配置整块替换**：Cordis 的 id 定向 patch 会替换该行的整个 `config`，不做深合并。处理办法见「DSH 如何选中这个 provider」里的说明。
 - **响应里没有摘要**：插件不会伪造摘要，所以结果里 `snippet` 缺失是预期行为。想要摘要就把 `includeAnswer` 打开，模型正文会作为 `WebSearchResult.content` 返回。
 - **按量计费端点要余额**：`goMode: false` 走 `/zen/v1`，账户没钱会返回 **HTTP 402**。只有 Go 套餐的账号请保持 `goMode` 开启。
-- **模型会换代，且目录不可信**：目录里有不代表会搜索（`deepseek-v4.1-flash` 在 `/models` 里但完全不执行搜索，静默失去联网能力、不报错），不在目录里也可能仍能用（`deepseek-v4-flash` 已被 `/models` 移除却仍可搜索）。所以默认值只能取「**目录里有 且 实际能搜**」的交集——只有 `deepseek-v4-pro` 满足。换模型后请确认搜索真的发生了（看结果里有没有 `Sources`）；插件不预先校验，写错的模型要到实际调用才报错，但错误信息会点名当前模型、当前端点，并让你去查该端点的 `/models`。
+- **模型会换代，且目录不可信**：`/models` 里有这个模型 ≠ 它真的会搜索——有的模型在目录里却不执行搜索，静默失去联网能力、不报错；也有的被目录移除但仍可搜索。**以实际是否产生 `Sources` 为准**。插件不预先校验，写错的模型要到实际调用才报错，但错误信息会点名当前模型、当前端点，并让你去查该端点的 `/models`。
 - **密钥会过期**：过期正文是 `This API key has expired.`，去 OpenCode Console 换一把即可；插件会在 401 文案里点名这一点。
 - **Go / 按量是两个独立权益**：同一个 OpenCode 账号上，Go 套餐的密钥不等于按量计费可用，反之亦然。
 - **端点行为、模型目录都可能随时变动**：以你的实际请求为准，用上面的探针脚本自查。
