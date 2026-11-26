@@ -147,7 +147,7 @@ export OPENCODE_API_KEY=sk-...        # 或 OPENCODE_GO_API_KEY
 | `apiKeyEnv` | `OPENCODE_API_KEY` | ✅（credential-ref） | 凭据引用名 |
 | `baseURL` | 空 | ✅ | 空 = 按 `goMode` 决定 |
 | `model` | `deepseek-v4-pro` | ✅ | Anthropic 格式模型名；唯一「目录内有且实际能搜索」的 |
-| `apiVersion` | Anthropic Messages 的官方版本号 | ✅ | 写进 `anthropic-version` 头；一般无需修改 |
+| `apiVersion` | `2023-06-01` | ✅ | 写进 `anthropic-version` 头；一般无需修改 |
 | `maxTokens` | `4096` | ✅ | 生成上限。**别再调小**：`1024` 会被 thinking 吃光（`stop_reason: max_tokens`），看起来「搜不到结果」其实根本没轮到工具 |
 | `maxUses` | `5` | ✅ | 服务端搜索次数上限 |
 | `timeoutMs` | `30000` | ✅ | 单次尝试超时 |
