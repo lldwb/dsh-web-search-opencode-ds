@@ -16,7 +16,7 @@
 
 - 仓库：<https://github.com/lldwb/dsh-web-search-opencode-ds>（公开，MIT）
 - 要求：Node ≥ 20（见 `package.json` 的 `engines`）；dsh 桌面版（或任何提供 `ctx.web` 与设置服务的部署）
-- 无 CHANGELOG：改动记录见 git 提交历史
+- 变更历史见 [`CHANGELOG.md`](./CHANGELOG.md)（更早的版本见 `git log` 与 tag）
 
 ## 加载方式
 
@@ -305,3 +305,4 @@ DSH 的设置服务只把**活跃 profile 条目上的 volatile 字段**投影�
 
 - 仓库：<https://github.com/lldwb/dsh-web-search-opencode-ds>（公开）
 - 许可证：MIT，见 [LICENSE](./LICENSE)
+- 变更历史见 [`CHANGELOG.md`](./CHANGELOG.md)
